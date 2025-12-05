@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MODULE_PATH="./lkm_hyp.ko"
+MODULE_PATH="./vmx.ko"
 
 if sudo insmod "$MODULE_PATH"; then
     echo "Module inserted successfully."
