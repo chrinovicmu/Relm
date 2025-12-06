@@ -1,6 +1,8 @@
 #ifndef HW_H 
 #define HW_H
 
+#include <linux/types.h>
+#include "vmcs.h"
 
 struct guest_regs
 {
@@ -31,13 +33,20 @@ struct guest_regs
     unsigned long ss;
 }; 
 
-struct vpcu
+struct vcpu
 {
     struct vm   *vm;
-    int         *vpcu_id;
+    int         vpcu_id;
     
     struct vmcs *vmcs;
     u64         vmcs_pa;
+
+    struct vmxon_region *vmxon; 
+    u64         vmxon_pa; 
+
+
+    struct vmx_vmexec_controls vmexec_ctl;  
+
     void        *msr_bitmap; 
 
     struct guest_regs regs;
@@ -49,6 +58,22 @@ struct vpcu
     u64 exit_qualification;
 
     spinlock_t lock; 
+}; 
+
+struct vcpu *create_vpcu(struct kvx_vm *vm, int vcpu_id)
+{
+    struct vcpu *vcpu;
+    uint32_t vmcs_size = _vmcs_get_size(); 
+
+    vcpu = kzalloc(sizeof(*vcpu), GFP_KERNEL); 
+    if(!vcpu)
+        return NULL; 
+
+    vcpu->vm = vm; 
+    vcpu->vpcu_id = vcpu_id; 
+
+    vcpu->vmxon = kzalloc(40)
 }
+
 
 #endif 
