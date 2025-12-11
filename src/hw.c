@@ -16,63 +16,7 @@
 #include "vmcs.h"
 #include "vmx_ops.h"
 #include "vmx_consts.h"
-
-
-int setup_vmxon_region(struct vcpu *vcpu)
-{
-    if(!vcpu)
-        return -EINVAL;
-
-    vcpu->vmxon = (struct vmxon_region *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
-    if(!vcpu->vmxon)
-        return -ENOMEM;
-
-    *(uint32_t *)vcpu->vmxon = _vmcs_revision_id();
-    vcpu->vmxon_pa = virt_to_phys(vcpu->vmxon);
-
-    return 0;
-}
-
-int setup_vmcs_region(struct vcpu *vcpu)
-{
-    if(!vcpu)
-        return -EINVAL;
-
-    uint32_t vmcs_size = _get_vmcs_size();
-    size_t alloc_size = (vmcs_size <= PAGE_SIZE) ? PAGE_SIZE : PAGE_ALIGN(vmcs_size);
-
-    vcpu->vmcs = (struct vmcs *)__get_free_pages(GFP_KERNEL | __GFP_ZERO, get_order(alloc_size));
-    if(!vcpu->vmcs)
-        return -ENOMEM;
-
-    *(uint32_t *)vcpu->vmcs = _vmcs_revision_id();
-    vcpu->vmcs_pa = virt_to_phys(vcpu->vmcs);
-
-    return 0;
-}
-
-int setup_io_bitmap(struct vcpu *vcpu)
-{
-    if(!vcpu)
-        return -EINVAL;
-
-    vcpu->io_bitmap = (uint32_t *)__get_free_page(GFP_KERNEL);
-    if(!vcpu->io_bitmap)
-        return -ENOMEM;
-
-    memset(vcpu->io_bitmap, 0, VMCS_IO_BITMAP_SIZE);
-    vcpu->io_bitmap_pa = virt_to_phys(vcpu->io_bitmap);
-
-    if(_vmwrite(VMCS_IO_BITMAP_A, (uint64_t)vcpu->io_bitmap_pa) != 0) {
-        free_io_bitmap(vcpu);
-        return -EIO;
-    }
-
-    if(_vmwrite(VMCS_IO_BITMAP_B, (uint64_t)vcpu->io_bitmap + VMCS_IO_BITMAP_PAGES_ORDER) != 0) {
-        free_io_bitmap(vcpu);
-        return -EIO;
-    }
-
+#include "../utils/utils.h"
     return 0;
 }
 
@@ -86,6 +30,8 @@ int setup_msr_bitmap(struct vcpu *vcpu)
         return -ENOMEM;
 
     vcpu->msr_bitmap_pa = virt_to_phys(vcpu->msr_bitmap); 
+
+    PDEBUG("MSR bitmap physical address : 0x%llx\n", vcpu->msr_bitmap_pa); 
 }
 
 int setup_vmxon_region(struct vcpu *vcpu)
@@ -102,6 +48,7 @@ int setup_vmxon_region(struct vcpu *vcpu)
     *(uint32_t *)vcpu->vmxon = _vmcs_revision_id(); 
     vcpu->vmxon_pa = virt_to_phys(vcpu->vmxon); 
 
+    PDEBUG("VMXON region physicall address : 0x%llx\n", vcpu->vmxon_pa); 
     return 0; 
 
 }
@@ -139,8 +86,8 @@ int setup_io_bitmap(struct vcpu *vcpu)
     if(!vcpu)
         return -EINVAL;
 
-    vcpu->io_bitmap = (uint32_t *)__get_free_page(
-        GFP_KERNEL); 
+    size_t total_bitmap_size = 2 * VMCS_IO_BITMAP_SIZE;
+    vcpu->io_bitmap = (uint32_t *)__get_free_pages(GFP_KERNEL, get_order(total_size));
     if(!vcpu->io_bitmap)
     {
         pr_err("Failed to allocate I/O bitmap memory\n"); 
@@ -148,29 +95,32 @@ int setup_io_bitmap(struct vcpu *vcpu)
     }
 
     /* clear entire I/O bitmap (all 0  == allow all ports) */ 
-    memset(vcpu->io_bitmap, 0, VMCS_IO_BITMAP_SIZE);
+    memset(vcpu->io_bitmap, 0, total_bitmap_size);
 
     vcpu->io_bitmap_pa = virt_to_phys(vcpu->io_bitmap); 
     
-    pr_info("Allocated and cleared I/O bitmap at VA %p PA 0x%llx\n", 
+    PDEBUG("Allocated and cleared I/O bitmap at VA %p PA 0x%llx\n", 
             vcpu->io_bitmap, (unsigned long long )vcpu->io_bitmap_pa);
 
     /*write the address to the VMCS */ 
-    if(_vmwrite(VMCS_IO_BITMAP_A, (uint64_t)vcpu->io_bitmap_pa) != 0)
+    if(_vmwrite(VMCS_IO_BITMAP_A, vcpu->io_bitmap_pa) != 0)
     {
-        pr_err("VMWrite VMCS_IO_BITMAP_A failed\n");
-        free_io_bitmap(vcpu); 
+        PDEBUG("VMWrite VMCS_IO_BITMAP_A failed\n");
+        free_io_bitmap(vcpu->io_bitmap); 
         return -EIO; 
     }
 
-    if(_vmwrite(VMCS_IO_BITMAP_B, (uint64_t)vcpu->io_bitmap + VMCS_IO_BITMAP_PAGES_ORDER) != 0)
+    if(_vmwrite(VMCS_IO_BITMAP_B, vcpu->io_bitmap_pa + VMCS_IO_BITMAP_SIZE) != 0)
     {
-        pr_err("VMWrite VMCS_IO_BITMAP_B failed\n"); 
-        free_io_bitmap(vcpu); 
+        PDEBUG("VMWrite VMCS_IO_BITMAP_B failed\n"); 
+        free_io_bitmap(vcpu->io_bitmap); 
         return -EIO; 
     }
 
-    pr_info("VMCS I/O Bitmap field set successfully\n"); 
+    PDEBUG("IO bitmap A physical address : 0x%llx\nIO bitmap B physical address : 0x%llx\n", 
+           vcpu->io_bitmap_pa, 
+           vcpu->io_bitmap_pa + VMCS_IO_BITMAP_SIZE); 
+
     return 0; 
 
 }
