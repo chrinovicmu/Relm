@@ -11,44 +11,49 @@
 #include <asm/msr.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "hw.h"
 #include "vmcs.h"
 #include "vmx_ops.h"
 #include "vmx_consts.h"
 #include "../utils/utils.h"
-    return 0;
+
+struct host_cpu * host_cpu_create(int logical_cpu_id, in max_vcpus)
+{
+    struct host_cpu * hcpu; 
+    size_t vcpu_array_size; 
+
+    hcpu = kmalloc(sizeof(*hcpu), GFP_KERNEL); 
+    if(!hcpu)
+        return NULL; 
+
+    hcpu->logical_cpu_id = logical_cpu_id; 
+
+    if(vmx_setup_vmxon_region(hcpu) != 0)
+    {
+        pr_err("failed to setup vmxon region on host cpu : %d\n",hcpu->logical_cpu_id); 
+        hcpu->logical_cpu_id = -1; 
+        kfree(hcpu); 
+        return NULL; 
+    }
 }
 
-int setup_msr_bitmap(struct vcpu *vcpu)
+int setup_vmxon_region(struct host_cpu *hcpu)
 {
-    if(!vcpu)
-        return -EINVAL;
-
-    vcpu->msr_bitmap = kmalloc(PAGE_SIZE | __GFP_ZERO, GFP_KERNEL);
-    if(!vcpu->msr_bitmap)
-        return -ENOMEM;
-
-    vcpu->msr_bitmap_pa = virt_to_phys(vcpu->msr_bitmap); 
-
-    PDEBUG("MSR bitmap physical address : 0x%llx\n", vcpu->msr_bitmap_pa); 
-}
-
-int setup_vmxon_region(struct vcpu *vcpu)
-{
-    if(!vcpu)
+    if(!hcpu)
         return -EINVAL; 
 
     /*allocate one page, page-aligned, zeroed */ 
-    vcpu->vmxon = (struct vmxon_region *)__get_free_page(GFP_KERNEL | __GFP_ZERO); 
-    if(!vcpu->vmxon)
+    hcpu->vmxon = (struct vmxon_region *)__get_free_page(GFP_KERNEL | __GFP_ZERO); 
+    if(!hcpu->vmxon)
         return -ENOMEM; 
 
     /*set VMX revision identifier */ 
-    *(uint32_t *)vcpu->vmxon = _vmcs_revision_id(); 
-    vcpu->vmxon_pa = virt_to_phys(vcpu->vmxon); 
+    *(uint32_t *)hcpu->vmxon = _vmcs_revision_id(); 
+    hcpu->vmxon_pa = virt_to_phys(hcpu->vmxon); 
 
-    PDEBUG("VMXON region physicall address : 0x%llx\n", vcpu->vmxon_pa); 
+    PDEBUG("VMXON region physicall address : 0x%llx\n", hcpu->vmxon_pa); 
     return 0; 
 
 }

@@ -21,6 +21,7 @@
 #include <asm/page.h>
 #include <asm/io.h>
 #include <asm/errno.h> 
+#include <stdint.h>
 #include "vmx.h"
 #include "asm/page_types.h"
 #include "linux/gfp_types.h"
@@ -66,6 +67,42 @@ static inline void enable_vmx_operation(void)
 }
 
 
+bool setup_feature_control(void)
+{
+    uint64_t fc; 
+
+    fc = __rdmsr1(MSR_IA32_FEATURE_CONTROL); 
+
+    const uint64_t required = 
+        IA32_FEATURE_CONTROL_LOCKED | 
+        IA32_FEATURE_CONTROL_MSR_VMXON_ENABLE_OUTSIDE_SMX;
+
+    /*if MSR is locked, we can olny verify that VMXON is allowed */ 
+    if(fc & IA32_FEATURE_CONTROL_LOCKED)
+    {
+        if(!(fc & IA32_FEATURE_CONTROL_MSR_VMXON_ENABLE_OUTSIDE_SMX))
+        {
+            pr_err("feature control locked but VMXON not enbale"); 
+            return false; 
+        }
+        return true; 
+    }
+
+    /*lock MSR */ 
+    __wrmsr(MSR_IA32_FEATURE_CONTROL, required); 
+
+    fc = __rdmsr1(MSR_IA32_FEATURE_CONTROL); 
+
+    if((fc & required) |= required)
+    {
+        pr_err("failed to lock IA32_FEATURE_CONTROL with required bit\n"); 
+        return false; 
+    }
+
+    return true;
+
+
+}
 int get_vmx_operation(void)
 {
     unsigned long cr4;

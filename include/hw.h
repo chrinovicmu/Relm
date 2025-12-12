@@ -21,17 +21,16 @@ struct guest_regs {
     unsigned long cs, ds, es, fs, gs, ss;
 };
 
-
 /* Virtual CPU structure */
 struct vcpu {
+
     struct kvx_vm *vm;
+
     int vcpu_id;
+    int host_cpu_id; 
 
     struct vmcs_region *vmcs;
     u64 vmcs_pa;
-
-    struct vmxon_region *vmxon;
-    u64 vmxon_pa;
 
     struct vmx_exec_ctrls controls; 
 
@@ -63,6 +62,19 @@ struct vcpu {
 
     spinlock_t lock;
 };
+
+struct host_cpu
+{
+    int logical_cpu_id; 
+    struct vmxon_region *vmxon; 
+    u64 vmxon_pa; 
+
+    int vpcu_count; 
+    struct vcpu **vcpus; 
+
+    spinlock_t lock; 
+}; 
+
 
 /* Function declarations */
 int vmx_setup_vmxon_region(struct vcpu *vcpu);
