@@ -88,6 +88,5 @@ void free_vmcs_region(struct vcpu *vcpu);
 void free_io_btimap(struct vcpu *vcpu); 
 void free_msr_bitmap(struct vcpu *vcpu); 
 
-struct vcpu *create_vcpu(struct kvx_vm *vm, int vcpu_id);
 
 #endif /* HW_H */
