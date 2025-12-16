@@ -12,7 +12,7 @@
  * @target_host_cpu: The logical ID of the host CPU to pin to.
  * * Returns 0 on success, < 0 on failure.
  */
-int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id, int target_host_cpu)
+int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id, struct host_cpu)
 {
     struct vcpu *vcpu; 
     int ret = 0; 

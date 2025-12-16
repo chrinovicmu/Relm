@@ -180,6 +180,29 @@ int kvx_setup_vmcs_region(struct vcpu *vcpu)
 
 }
 
+static void kvx_setup_cr_controls(struct vcpu *vcpu)
+{
+    uint64_t fixed0, fixed1; 
+    uint64_t cr0_mask, cr4_mask; 
+
+    /*INITIAL GUEST CR0 */ 
+    fixed0 = __rdmsr1(MSR_IA32_VMX_CR0_FIXED0); 
+    fixed1 = __rdmsr1(MSR_IA32_VMX_CR0_FIXED1);
+
+    /*Initial state: paging (PG), Protected Mode (PE), Numeric Error(NE) */ 
+    vcpu->cr0 = X86_CR0_PG | X86_CR0_PE | X86_CR0_NE; 
+
+    /*hardware sanitation */ 
+    vcpu->cr0 = (vcpu->cr0 | fixed0) & fixed1; 
+
+    /*INITIAL GUEST CR4 */ 
+    fixed0 = __rdmsr1(MSR_IA32_VMX_CR4_FIXED0); 
+    fixed1 = __rdmsr1(MSR_IA32_VMX_CR4_FIXED1); 
+
+    vcpu->cr4 = X86_CR4_VMXE | X86_CR4_PAE; 
+    vcpu->cr4 = (vcpu->cr4 | fixed0) & fixed1; 
+}
+
 /*which IO operation */ 
 int kvx_setup_io_bitmap(struct vcpu *vcpu)
 {
