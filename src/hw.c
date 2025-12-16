@@ -180,8 +180,11 @@ int kvx_setup_vmcs_region(struct vcpu *vcpu)
 
 }
 
-static void kvx_setup_cr_controls(struct vcpu *vcpu)
+static int kvx_setup_cr_controls(struct vcpu *vcpu)
 {
+    if(!vcpu)
+        return -EINVAL; 
+
     uint64_t fixed0, fixed1; 
     uint64_t cr0_mask, cr4_mask; 
 
@@ -201,6 +204,25 @@ static void kvx_setup_cr_controls(struct vcpu *vcpu)
 
     vcpu->cr4 = X86_CR4_VMXE | X86_CR4_PAE; 
     vcpu->cr4 = (vcpu->cr4 | fixed0) & fixed1; 
+
+    /*configure host mask 
+     * if bit is 1 in mask, guest cannot change it withot a vmexit
+     * */
+
+    cr0_mask = X86_CR0_PG | X86_CR0_PE | X86_CR0_NE | X86_CR0_CD | X86_CR0_NW;
+    cr4_mask = X86_CR4_VMXE | X86_CR4_PAE | X86_CR4_PSE;
+
+    CHECK_VMWRITE(GUEST_CR0, vcpu->cr0); 
+    CHECK_VMWRITE(GUEST_CR4, vcpu->cr4); 
+    CHECK_VMWRITE(GUEST_CR3, vcpu->cr3); 
+
+    CHECK_VMWRITE(CR0_READ_SHADOW, vcpu->cr0); 
+    CHECK_VMWRITE(CR4_READ_SHADOW, vcpu->cr4 & ~X86_CR4_VMXE); 
+
+    CHECK_VMWRITE(CR0_MASK_HOST_MASK, cr0_mask); 
+    CHECK_VMWRITE(CR4_MASK_HOST_MASK, cr4_mask); 
+
+    return 0; 
 }
 
 /*which IO operation */ 
