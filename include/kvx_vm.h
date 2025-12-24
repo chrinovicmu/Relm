@@ -1,7 +1,9 @@
+#include <stdint.h>
 #ifnde VM_H
 #define VM_H
 
-#define KVX_MAX_VPCUS 1
+#define KVX_MAX_VCPUS 1  
+#define GUEST_STACK_ORDER 2 
 
 #include "hw.h"
 
@@ -18,6 +20,9 @@ struct kvx_vm
 {
     int vm_id;
     char name[16]; 
+
+    uint8_t guest_stack; 
+    uint64_t guest_rsp;  
 
     u64 guest_ram_size;
     void *guest_ram_base; 

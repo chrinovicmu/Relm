@@ -51,6 +51,14 @@ void* kzalloc_aligned(size_t size, size_t align, gfp_f flags)
     return PTR_ALIGN(ptr, align); 
 }
 
+bool check_cap(
+    const char *name, unsigned long expected, unsigned long got)
+{
+    if(got != expected)
+        pr_info("KVX %s: got %#lx expected %#lx\n", name, got, expected); 
+    
+    return got != expected; 
+}
 
 #endif // !UTILS 
 

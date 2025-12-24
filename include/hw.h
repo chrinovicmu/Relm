@@ -43,6 +43,7 @@ struct vcpu {
     int launched; 
     enum vcpu_state state; 
     bool halted;
+
     spinlock_t lock; 
     wait_queue_head_t wq; 
 
@@ -51,7 +52,7 @@ struct vcpu {
     uint8_t host_stack; 
     uint64_t host_rsp; 
 
-     struct vmcs_region *vmcs;
+    struct vmcs_region *vmcs;
     uint64_t vmcs_pa;
 
     struct vmx_exec_ctrls controls; 

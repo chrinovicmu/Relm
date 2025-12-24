@@ -1,3 +1,4 @@
+#include <cerrno>
 #include <linux/slab.h>
 #include <linux/gfp.h>
 #include <linux/mm.h>
@@ -114,7 +115,7 @@ struct host_cpu * host_cpu_create(int logical_cpu_id, int max_vcpus)
 
     hcpu = kmalloc(sizeof(*hcpu), GFP_KERNEL); 
     if(!hcpu)
-        return NULL; 
+        return -ENOMEM; 
 
     hcpu->logical_cpu_id = logical_cpu_id; 
 
@@ -360,7 +361,7 @@ static struct msr_entry *alloc_msr_entry(size_t n_entries)
 
     struct page *p = alloc_pages(GFP_KERNEL | __GFP_ZERO, order); 
     if(!p)
-        return NULL; 
+        return -ENOMEM; 
 
     return (struct msr_entry*)page_address(p); 
 }
@@ -673,7 +674,7 @@ struct vcpu *kvx_vcpu_alloc_init(struct kvx_vm *vm, int vcpu_id)
     /* Allocate zeroed VCPU struct */
     vcpu = kzalloc(sizeof(*vcpu), GFP_KERNEL);
     if (!vcpu)
-        return NULL;
+        return -ENOMEM;
 
     vcpu->vm = vm;
     vcpu->vcpu_id = vcpu_id;

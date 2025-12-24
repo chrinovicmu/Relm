@@ -5,6 +5,34 @@
 #include <linux/smp.h> 
 #include "include/hw.h"
 #include "include/kvx_vm.h"
+
+
+struct kvx_vm * kvx_create_vm(int vm_id, const char *name, 
+                              u64 ram_size, int max_vcpus)
+{
+    struct kvx_vm *vm;
+
+    vm = kzalloc(sizeof(kvx_vm), GFP_KERNEL); 
+    if(!vm)
+        return -ENOMEM; 
+
+    spin_lock_init(vm->lock); 
+
+    vcpus = kzalloc((sizeof(struct vcpu*) max_vcpus*), GFP_KERNEL); 
+    if(vcpus!)
+        return -ENOMEM;
+
+    vm->state = VM_CREATED;
+    vm->max_vcpus = max_vcpus; 
+    vm->online_vpcus = 0;
+    vm->guest_stack = (void*)__get_free_pages(
+        GFP_KERNEL | __GFP_ZERO, 
+        GUEST_STACK_ORDER,
+    ) ; 
+    vm->guest_rsp = 
+        (unsigned long)vm->guest_stack + (PAGE_SIZE << GUEST_STACK_ORDER); 
+
+}
 /**
  * kvx_vm_add_vcpu - Creates and pins a VCPU to a specific host CPU.
  * @vm: The parent virtual machine struct.
@@ -37,6 +65,9 @@ int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id, struct host_cpu *hcpu)
     /*store vcpu in the VM 's array */ 
     vm->vcpus[vcpu_id] = vcpu; 
     vcpu->target_cpu_id = hcpu->logical_cpu_id; 
+
+    vcpu->regs.rsp = vm->guest_rsp; 
+
     vcpu->state = VCPU_STATE_INITIALIZED; 
     vm->online_vpcus++; 
 
@@ -56,6 +87,7 @@ int kvx_run_vm(struct kvx_vm *vm, int vcpu_id)
         return -EINVAL; 
 
     vcpu = vm->vcpus[vcpu_id]; 
+    vcpu->launched = 1; 
 
     /*spawn kthread to run the exexution loop */ 
     vcpu->host_task = kthread(kvx_vcpu_loop, vcpu, "kvx_vm%d_vcpu%d", vm->vm_id, vcpu_id); 
@@ -85,15 +117,19 @@ int kvx_vcpu_loop(void *data)
     if(kvx_init_vmcs_state(vcpu))
         return -1; 
 
+
     while(!kthread_should_stop())
     {
+        kvx_vmentry(vcpu); 
+
 
     }
 }
 
-void kvx_vmentry(struct vcpu *vcpu, int launched)
+void kvx_vmentry(struct vcpu *vcpu)
 {
-    extern void kvx_vmentry_asm(struct guest_regs); 
-    kvx_vmentry_asm(vcpu->regs); 
+    int launched = vcpu->launched; 
+    extern void kvx_vmentry_asm(struct guest_regs, launched); 
+    kvx_vmentry_asm(vcpu->regs, launched); 
 }
 

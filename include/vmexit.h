@@ -72,68 +72,6 @@ void emulate_cr_access(struct vcpu *vcpu);
 void emulate_msr_access(struct vcpu *vcpu);
 void handle_ept_violation(struct vcpu *vcpu);
 
-__attribute__((naked)) void kvx_vmexit_handler(void)
-{
-    __asm__ volatile(
-        /*save all GPRs to the host stack */ 
-        "push %%rax\n"
-        "push %%rbx\n"
-        "push %%rcx\n"
-        "push %%rdx\n"
-        "push %%rsi\n"
-        "push %%rdi\n"
-        "push %%rbp\n"
-        "push %%r8\n"
-        "push %%r9\n"
-        "push %%r10\n"
-        "push %%r11\n"
-        "push %%r12\n"
-        "push %%r13\n"
-        "push %%r14\n"
-        "push %%r15\n"
-
-        /*align the stack to 16-bytes for the C ABI */ 
-        "sub %8, %%rsp\n"
-
-
-        /*rsp points to our saved register context 
-        * pass register pointer as first arg to handle_vmexit 
-        */ 
-        "lea 8(%%rsp), %%rdi\n"
-        "call handle_vmexit\n"
-
-        /*undo unalignment */  
-
-        /*check return values */ 
-        "test %%eax, %%eax\n"
-        "jnz vmexit_failed"
-
-        /*resotre register after handler returns */ 
-       "pop %%r15\n"
-        "pop %%r14\n"
-        "pop %%r13\n"
-        "pop %%r12\n"
-        "pop %%r11\n"
-        "pop %%r10\n"
-        "pop %%r9\n"
-        "pop %%r8\n"
-        "pop %%rbp\n"
-        "pop %%rdi\n"
-        "pop %%rsi\n"
-        "pop %%rdx\n"
-        "pop %%rcx\n"
-        "pop %%rbx\n"
-        "pop %%rax\n"
-
-        "vmresume\n"
-        "jmp vmresume_failed\n"
-
-        "vmexit_failed:\n"
-        "jmp vmresume_failed\n"
-        ::: "memory"
-    ); 
-}
-
 static int handle_vmexit(struct guest_regs *regs)
 {
     uint64_t exit_reason; 
