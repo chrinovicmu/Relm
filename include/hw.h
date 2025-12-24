@@ -40,6 +40,7 @@ struct vcpu {
     int vcpu_id;
     int host_cpu_id; 
 
+    int launched; 
     enum vcpu_state state; 
     bool halted;
     spinlock_t lock; 

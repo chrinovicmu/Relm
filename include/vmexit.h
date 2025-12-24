@@ -92,11 +92,17 @@ __attribute__((naked)) void kvx_vmexit_handler(void)
         "push %%r14\n"
         "push %%r15\n"
 
+        /*align the stack to 16-bytes for the C ABI */ 
+        "sub %8, %%rsp\n"
+
+
         /*rsp points to our saved register context 
         * pass register pointer as first arg to handle_vmexit 
         */ 
-        "mov %%rsp, %%rdi\n"
+        "lea 8(%%rsp), %%rdi\n"
         "call handle_vmexit\n"
+
+        /*undo unalignment */  
 
         /*check return values */ 
         "test %%eax, %%eax\n"
@@ -128,7 +134,7 @@ __attribute__((naked)) void kvx_vmexit_handler(void)
     ); 
 }
 
-static int handle_vmexit(struct guest_regs regs)
+static int handle_vmexit(struct guest_regs *regs)
 {
     uint64_t exit_reason; 
     uint64_t exit_qualification;

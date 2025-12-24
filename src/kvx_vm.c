@@ -91,7 +91,7 @@ int kvx_vcpu_loop(void *data)
     }
 }
 
-void kvx_vmentry(struct vcpu *vcpu)
+void kvx_vmentry(struct vcpu *vcpu, int launched)
 {
     extern void kvx_vmentry_asm(struct guest_regs); 
     kvx_vmentry_asm(vcpu->regs); 

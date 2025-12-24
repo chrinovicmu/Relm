@@ -827,7 +827,7 @@ static int kvx_setup_host_state(struct vcpu *vcpu)
     CHECK_VMWRITE(HOST_CR3, cr3);
     CHECK_VMWRITE(HOST_CR4, cr4);
 
-    extern kvx_vmexit_handler; 
+    extern void kvx_vmexit_handler(void); 
     CHECK_VMWRITE(HOST_RSP, vcpu->host_rsp);
     CHECK_VMWRITE(HOST_RIP, (uint64_t)kvx_vmexit_handler);
 

@@ -33,5 +33,5 @@ struct kvx_vm
 
 struct kvx_vm * kvx_create_vm(int vm_id, const char *name, u64 ram_size, int max_vcpus); 
 int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id, struct host_cpu); 
-void kvx_vmentry(struct vcpu *vcpu); 
+void kvx_vmentry(struct vcpu *vcpu, int launched); 
 #endif 
