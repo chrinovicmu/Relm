@@ -111,7 +111,7 @@ struct host_cpu *host_cpu_create(int logical_cpu_id, int max_vcpus);
 struct vcpu *kvx_vcpu_alloc_init(struct kvx_vm *vm, int vcpu_id);
 int kvx_vcpu_pin_to_cpu(struct vcpu *vcpu, int target_cpu_id);
 void kvx_vcpu_unpin_and_stop(struct vcpu *vcpu);
-void free_vcpu(struct vcpu *vcpu);
+void kvx_free_vcpu(struct vcpu *vcpu);
 int kvx_init_vmcs_state(struct vcpu *vcpu); 
 
 #endif /* HW_H */

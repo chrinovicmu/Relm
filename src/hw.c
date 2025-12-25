@@ -792,7 +792,7 @@ void kvx_free_vmcs_region(struct vcpu *vcpu)
     }
 }
 
-void free_vmxon_region(struct host_cpu *hcpu)
+void kvx_free_vmxon_region(struct host_cpu *hcpu)
 {
     if (vcpu->vmxon) 
     {
@@ -803,7 +803,7 @@ void free_vmxon_region(struct host_cpu *hcpu)
 }
 
 /* Free the entire VCPU */
-void free_vcpu(struct vcpu *vcpu)
+void kvx_free_vcpu(struct vcpu *vcpu)
 {
     if (!vcpu)
         return;

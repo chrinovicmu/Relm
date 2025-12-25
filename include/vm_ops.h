@@ -172,7 +172,19 @@ static inline int _vmwrite(uint64_t field_enc, uint64_t value)
 
     }
 }
+static inline int __vmclear(u64 pa)
+{
+    u8 error;
+    asm volatile (
+        "vmclear %1; "
+        "setna %0"      /* Set 'error' if CF=1 or ZF=1 */
+        : "=q" (error)
+        : "m" (pa)
+        : "cc", "memory"
+    );
 
+    return error;
+}
 static inline int _vmlaunch(void)
 {
     int ret;

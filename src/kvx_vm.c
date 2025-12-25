@@ -3,36 +3,130 @@
 #include <linux/kthread.h> 
 #include <sched.h>
 #include <linux/smp.h> 
+#include <stdint.h>
 #include "include/hw.h"
 #include "include/kvx_vm.h"
 
 
-struct kvx_vm * kvx_create_vm(int vm_id, const char *name, 
-                              u64 ram_size, int max_vcpus)
+extern void kvx_vmentry_asm(struct guest_regs, int launched); 
+
+static u64 kvx_op_get_uptime(struct kvx_vm *vm)
+{
+    if (!vm) return 0;
+    return ktime_to_ns(ktime_get()) - vm->stats.start_time_ns;
+}
+
+static void kvx_op_print_stats(struct kvx_vm *vm)
+{
+    pr_info("KVX [%s] Stats: Exits=%llu, CPUID=%llu, HLT=%llu\n",
+            vm->name, vm->stats.total_exits, 
+            vm->stats.cpuid_exits, vm->stats.hlt_exits);
+}
+
+static void kvx_op_dump_regs(struct kvx_vm *vm, int vcpu_id)
+{
+    struct vcpu *vcpu = vm->vcpus[vcpu_id];
+    if (!vcpu) return;
+    
+    pr_info("KVX [%s] VCPU %d RIP: 0x%llx RSP: 0x%llx\n",
+            vm->name, vcpu_id, vcpu->regs.rip, vcpu->regs.rsp);
+}
+
+static const struct kvx_vm_operations kvx_default_ops = {
+    .get_uptime  = kvx_op_get_uptime,
+    .print_stats = kvx_op_print_stats,
+    .dump_regs   = kvx_op_dump_regs,
+};
+
+
+struct kvx_vm * kvx_create_vm(int vm_id, const char *vm_name, 
+                              uint64_t ram_size)
 {
     struct kvx_vm *vm;
 
     vm = kzalloc(sizeof(kvx_vm), GFP_KERNEL); 
     if(!vm)
-        return -ENOMEM; 
+    {
+        pr_err("KVX: Failed to allocate VM header\n"); 
+        return NULL; 
+    }
 
-    spin_lock_init(vm->lock); 
+    vm->vm_id = vm_id; 
+    vm->state = VM_STATE_CREATED; 
+    vm->max_vcpus = KVX_MAX_VCPUS; 
+    vm->online_vpcus = 0; 
+    vm->ops = &kvx_default_ops; 
 
-    vcpus = kzalloc((sizeof(struct vcpu*) max_vcpus*), GFP_KERNEL); 
-    if(vcpus!)
-        return -ENOMEM;
+    if(vm_name)
+        strscpy(vm->vm_name, vm_name, sizeof(vm->vm_name)); 
 
-    vm->state = VM_CREATED;
-    vm->max_vcpus = max_vcpus; 
-    vm->online_vpcus = 0;
-    vm->guest_stack = (void*)__get_free_pages(
-        GFP_KERNEL | __GFP_ZERO, 
-        GUEST_STACK_ORDER,
-    ) ; 
-    vm->guest_rsp = 
-        (unsigned long)vm->guest_stack + (PAGE_SIZE << GUEST_STACK_ORDER); 
+    spin_lock_init(&vm->lock); 
 
+    vm->guest_ram_size = ram_size; 
+    vm->guest_ram_base = vmalloc(vm->guest_ram_size); 
+
+    if(!vm->guest_ram_base)
+    {
+        pr_err("KVX: Failed to allocate %llu bytes of RAM for the VM %d\n", 
+               ram_size, vm_id); 
+        kfree(vm); 
+        return NULL; 
+    }
+
+    memset(vm->guest_ram_base, 0, vm->guest_ram_size); 
+
+    vm->vcpus = kcalloc(vm->max_vcpus, sizeof(struct vcpu*), GFP_KERNEL); 
+    if(!vm->vcpus)
+    {
+        vfree(vm->guest_ram_base); 
+        kfree(vm); 
+        return NULL; 
+    }
+
+    pr_info("KVX: VM '%s' (ID: %d) created with %llu MB RAM\n", 
+            vm->vm_name, vm->vm_id, (ram_size >> 20)); 
+
+    return vm; 
 }
+
+void kvx_destroy_vm(struct kvx_vm *vm)
+{
+    int i; 
+
+    if(!vm)
+        return; 
+
+    pr_info("KVX: Destroying VM '%s' (ID: %d)\n", vm->vm_name, vm->vm_id); 
+
+    /*stop and free all vcpus */ 
+    if(vm->vcpus)
+    {
+        for(i = 0; i < vm->max_vcpus, i++)
+        {
+            if(vm->vcpus[i])
+            {
+                /*if VCPU has runnning thread, stop it first.*/
+                if(vm->vcpus[i]->host_task)
+                    kthread_stop(vm->vcpus[i]->host_task); 
+
+                kvx_free_vcpu(vm->vcpus[i]);
+                vm->vcpus[i] = NULL; 
+            }
+        }
+        kfree(vm->vcpus); 
+    }
+
+    if(vm->guest_ram_base)
+    {
+        vfree(vm->guest_ram_base);
+        vm->guest_ram_base = NULL;
+    }
+
+    kfree(vm); 
+
+    pr_info("KVX: VM destruction complete.\n"); 
+}
+
 /**
  * kvx_vm_add_vcpu - Creates and pins a VCPU to a specific host CPU.
  * @vm: The parent virtual machine struct.
@@ -120,16 +214,28 @@ int kvx_vcpu_loop(void *data)
 
     while(!kthread_should_stop())
     {
-        kvx_vmentry(vcpu); 
+        kvx_vmentry_asm(vcpu->regs, vcpu->launched); 
 
-
+        /*if we are here, it means:
+        * handler_vmexit() returned 0 (requesred stop)
+        * VMLAUNCH/VMRESUME failed (hardware error)
+        */ 
+        if(vcpu->launched)
+        {
+            uint64_t error = __vmread(VM_INSTRUCTION_ERROR);
+            if(error != 0)
+            {
+                pr_err("KVX: Hardware Error: %llu\n", error); 
+                break; 
+            }
+        }
+        vcpu->launched = 1; 
     }
+
+    __vmclear(vcpu->vmcs_pa); 
+    return 0; 
 }
 
-void kvx_vmentry(struct vcpu *vcpu)
-{
-    int launched = vcpu->launched; 
-    extern void kvx_vmentry_asm(struct guest_regs, launched); 
-    kvx_vmentry_asm(vcpu->regs, launched); 
-}
+
+
 

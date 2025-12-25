@@ -1,7 +1,6 @@
-KVX Hypervisor 
+# KVX Hypervisor 
 
-A general purpose Type 1 x86_64 hypervisor that manages guest VM/operating systems. 
-KVX runs directly in the Linux kernel and is implemented using Intel's hardware-assisted virtualization technology VT-x. 
+**KVX** is a general-purpose x86_64 hypervisor built to manage guest operating systems with minimal overhead. Running as a native Linux kernel module, it utilizes Intel’s hardware-assisted virtualization (VT-x) to achieve near-native execution speeds.
 
 ## License
 
@@ -9,4 +8,4 @@ Dual BSD/GPL
 
 ## Author
 
-Chrinovic 
+Chrinovic M 
