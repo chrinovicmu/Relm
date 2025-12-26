@@ -1,11 +1,8 @@
-#ifndef HW_H
-#define HW_H
+#ifndef VMX_H
+#define VMX_H
 
 #include <linux/types.h>
 #include <linux/spinlock.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <errno.h>
 
 #include "vmx_ops.h"
 #include "vmcs.h"

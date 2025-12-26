@@ -7,6 +7,8 @@
 #include <linux/errno.h> 
 #include <linux/kernel.h> 
 
+#include "include/vm_ops.h"
+
 #define CACHE_LINE_SIZE  64
 
 #define DEBOG_LOG  1 

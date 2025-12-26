@@ -1,12 +1,12 @@
-#include <stdint.h>
 #ifnde VM_H
 #define VM_H
+
+#include "vm.h"
 
 #define KVX_MAX_VCPUS 1  
 #define GUEST_STACK_ORDER 2 
 #define KVX_VM_RAM_SIZE 128 * 1024 * 1024; 
 
-#include "hw.h"
 
 /*represents a single virtual machine */ 
 

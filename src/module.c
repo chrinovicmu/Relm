@@ -2,9 +2,8 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/delay.h>
-#include <stdint.h>
-#include "include/hw.h"
-#include "include/kvx_vm.h"
+#include "include/vmx.h"
+#include "include/vm.h"
 
 static struct kvx_vm *my_vm = NULL; 
 

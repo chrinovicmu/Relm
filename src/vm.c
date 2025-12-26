@@ -1,8 +1,8 @@
 #include <linux/kthread.h> 
 #include <sched.h>
 #include <linux/smp.h> 
-#include "include/hw.h"
-#include "include/kvx_vm.h"
+#include "include/vmx.h"
+#include "include/vm.h"
 
 extern void kvx_vmentry_asm(struct guest_regs, int launched); 
 

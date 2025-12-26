@@ -1,4 +1,5 @@
-#pragma once 
+#ifndef VMCS_STATE_H 
+#define VMCS_STATE_H
 
 #define HOST_CR0		                0x00006c00
 #define	HOST_CR3		                0x00006c02
@@ -225,3 +226,5 @@ static inline uint64_t get_desc64_base(const struct desc64 *desc)
 	return ((uint64_t)desc->base3 << 32) |
 		(desc->base0 | ((desc->base1) << 16) | ((desc->base2) << 24));
 }
+
+#endif  

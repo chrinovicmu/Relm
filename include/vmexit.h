@@ -1,7 +1,8 @@
-#pragma once 
+#ifndef VMEXIT_H 
+#define VMEXIT_H
 
-#include "hw.h"
-#include <stdint.h>
+#include "vm.h"
+
 #define VM_EXIT_REASON                              0x00004402
 
 #define EXIT_REASON_EXCEPTION_NMI                   0x00000000
@@ -115,4 +116,4 @@ static int handle_vmexit(struct guest_regs *regs)
     }
 }
 
-
+#endif

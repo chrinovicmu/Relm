@@ -12,7 +12,7 @@
 #include <asm/processor.h>
 #include <asm/msr.h>
 
-#include "hw.h"
+#include "vmx.h"
 #include "vmcs.h"
 #include "vmx_ops.h"
 #include "vmx_consts.h"

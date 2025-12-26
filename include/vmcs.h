@@ -2,7 +2,6 @@
 #define VMCS_H
 
 #include <linux/const.h>
-#include <stdint.h>
 #include "linux/kern_levels.h"
 #include "vmcs_state.h"
 
