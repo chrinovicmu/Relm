@@ -4,6 +4,7 @@
 
 #define KVX_MAX_VCPUS 1  
 #define GUEST_STACK_ORDER 2 
+#define KVX_VM_RAM_SIZE 128 * 1024 * 1024; 
 
 #include "hw.h"
 
@@ -29,7 +30,7 @@ struct kvx_vm_stats
 struct kvx_vm
 {
     int vm_id;
-    char vm_name[16]; 
+    char vm_name[16];
 
     u64 guest_ram_size;
     void *guest_ram_base; 

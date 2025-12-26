@@ -36,7 +36,7 @@ static void kvx_free_io_bitmap(struct vcpu *vcpu);
 static void kvx_free_msr_bitmap(struct vcpu *vcpu);
 static void kvx_free_vmcs_region(struct vcpu *vcpu);
 static void kvx_free_all_msr_areas(struct vcpu *vcpu);
-static void free_vmxon_region(struct host_cpu *hcpu);
+static void kvx_free_vmxon_region(struct host_cpu *hcpu);
 
 static struct msr_entry *alloc_msr_entry(size_t n_entries);
 static void free_msr_area(struct msr_entry *area, size_t n_entries);
@@ -49,6 +49,68 @@ static inline bool kvx_vcpu_io_bitmap_enabled(struct vcpu *vcpu);
 static inline bool kvx_vcpu_msr_bitmap_enabled(struct vcpu *vcpu);
 static inline unsigned int msr_area_order(size_t bytes);
 
+bool kvx_vmx_support(void) 
+{
+    unsigned int ecx; 
+
+   __asm__ volatile (
+        "cpuid"
+        : "=c"(ecx)        
+        : "a"(1)          
+        : "ebx", "edx"
+    );  
+
+    return (ecx & (1 << 5)) != 0;  
+}
+
+static inline void kvx_enable_vmx_operation(void)
+{
+    uint64_t cr4;
+
+    __asm__ volatile (
+        "mov %%cr4, %0\n\t"
+        "or %1, %0\n\t"
+        "mov %0, %%cr4\n\t"
+        : "=&r"(cr4)
+        : "i"(1UL << 13)
+        : "memory"
+    );
+}
+
+bool kvx_setup_feature_control(void)
+{
+    uint64_t fc; 
+
+    fc = __rdmsr1(MSR_IA32_FEATURE_CONTROL); 
+
+    const uint64_t required = 
+        IA32_FEATURE_CONTROL_LOCKED | 
+        IA32_FEATURE_CONTROL_MSR_VMXON_ENABLE_OUTSIDE_SMX;
+
+    /*if MSR is locked, we can olny verify that VMXON is allowed */ 
+    if(fc & IA32_FEATURE_CONTROL_LOCKED)
+    {
+        if(!(fc & IA32_FEATURE_CONTROL_MSR_VMXON_ENABLE_OUTSIDE_SMX))
+        {
+            pr_err("feature control locked but VMXON not enbale"); 
+            return false; 
+        }
+        return true; 
+    }
+
+    /*lock MSR */ 
+    __wrmsr(MSR_IA32_FEATURE_CONTROL, required); 
+
+    fc = __rdmsr1(MSR_IA32_FEATURE_CONTROL); 
+
+    if((fc & required) |= required)
+    {
+        pr_err("failed to lock IA32_FEATURE_CONTROL with required bit\n"); 
+        return false; 
+    }
+
+    return true;
+}
 
 /*pin vcpu thread to a specific physical host cpu for cpu affinity*/ 
 int kvx_vcpu_pin_to_cpu(struct vcpu *vcpu, int target_cpu_id)
@@ -108,7 +170,7 @@ void kvx_vcpu_unpin_and_stop(struct vcpu *vcpu)
     kthread_stop(vcpu->host_task); 
 }
 
-struct host_cpu * host_cpu_create(int logical_cpu_id, int max_vcpus)
+struct host_cpu * kvx_host_cpu_create(int logical_cpu_id)
 {
     struct host_cpu * hcpu; 
     size_t vcpu_array_size; 
@@ -132,7 +194,17 @@ struct host_cpu * host_cpu_create(int logical_cpu_id, int max_vcpus)
     return hcpu; 
 }
 
-int kvx_setup_vmxon_region(struct host_cpu *hcpu)
+void kvx_destroy_host_cpu(struct host_cpu *hcpu)
+{
+    if(hcpu)
+    {
+        kvx_free_vmxon_region(hcpu); 
+        kfree(hcpu); 
+        hcpu = NULL; 
+    }
+}
+
+static int kvx_setup_vmxon_region(struct host_cpu *hcpu)
 {
     if(!hcpu)
         return -EINVAL; 
@@ -151,7 +223,7 @@ int kvx_setup_vmxon_region(struct host_cpu *hcpu)
 
 }
 
-int kvx_setup_vmcs_region(struct vcpu *vcpu)
+static int kvx_setup_vmcs_region(struct vcpu *vcpu)
 {
     if(!vcpu)
         return -EINVAL; 
@@ -700,6 +772,7 @@ struct vcpu *kvx_vcpu_alloc_init(struct kvx_vm *vm, int vcpu_id)
         return -EINVAL; 
 
     struct vcpu *vcpu;
+    struct host_cpu *hcpu; 
     int ret; 
 
     /* Allocate zeroed VCPU struct */
@@ -721,13 +794,20 @@ struct vcpu *kvx_vcpu_alloc_init(struct kvx_vm *vm, int vcpu_id)
     spin_lock_init(&vcpu->lock);
     init_waitqueue_head(&vcpu->wq); 
 
+    hcpu = kvx_create_host_cpu(HOST_CPU_ID); 
+    if(hcpu)
+        goto _out_free_vcpu; 
+
+    vcpu->hcpu = hcpu; 
+    vcpu->host_cpu_id = hcpu->logical_cpu_id; 
+
     /*alllocate vCPU stack */ 
     vcpu->host_stack = (void *)__get_free_pages(
         GFP_KERNEL | __GFP_ZERO, 
         HOST_STACK_ORDER
     ); 
     if(!vcpu->host_stack)
-        goto out_free_vcpu; 
+        goto _out_free_host_cpu; 
 
     /*point to top of host stack */ 
     vcpu->host_rsp =
@@ -791,6 +871,8 @@ _out_free_vmcs:
     kvx_free_vmcs_region(vcpu);
 _out_free_host_stack:
     free_pages((unsigned long)vcpu->host_stack, HOST_STACK_ORDER);
+_out_free_host_cpu:
+    kvx_destroy_host_cpu(vcpu->hcpu); 
 _out_free_vcpu:
     kfree(vcpu);
     return NULL; 
@@ -851,7 +933,7 @@ void kvx_free_vcpu(struct vcpu *vcpu)
     kvx_free_io_bitmap(vcpu);
     kvx_free_msr_bitmap(vcpu);
     kvx_free_vmcs_region(vcpu);
-
+    kvx_destroy_host_cpu(vcpu->hcpu); 
     kfree(vcpu);
 }
 

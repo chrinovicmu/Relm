@@ -37,8 +37,10 @@ enum vcpu_state {
 struct vcpu {
 
     struct kvx_vm *vm;
+    struct host_cpu *hcpu;
+
     int vcpu_id;
-    int host_cpu_id; 
+    int host_cpu_id;  
 
     int launched; 
     enum vcpu_state state; 

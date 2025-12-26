@@ -1,12 +1,8 @@
-#include <cerrno>
-#include <cstddef>
 #include <linux/kthread.h> 
 #include <sched.h>
 #include <linux/smp.h> 
-#include <stdint.h>
 #include "include/hw.h"
 #include "include/kvx_vm.h"
-
 
 extern void kvx_vmentry_asm(struct guest_regs, int launched); 
 
@@ -73,7 +69,14 @@ struct kvx_vm * kvx_create_vm(int vm_id, const char *vm_name,
         kfree(vm); 
         return NULL; 
     }
-    memset(vm->guest_ram_base, 0, vm->guest_ram_size); 
+
+    unsigned char guest_code[] = {
+        0xf4, 
+        0xeb, 
+        0xfd
+    }; 
+
+    memset(vm->guest_ram_base, guest_code, vm->guest_ram_size); 
 
     vm->vcpus = kcalloc(vm->max_vcpus, sizeof(struct vcpu*), GFP_KERNEL); 
     if(!vm->vcpus)
@@ -101,7 +104,7 @@ void kvx_destroy_vm(struct kvx_vm *vm)
     /*stop and free all vcpus */ 
     if(vm->vcpus)
     {
-        for(i = 0; i < vm->max_vcpus, i++)
+        for(i = 0; i < vm->max_vcpus; i++)
         {
             if(vm->vcpus[i])
             {
@@ -134,7 +137,7 @@ void kvx_destroy_vm(struct kvx_vm *vm)
  * @target_host_cpu: The logical ID of the host CPU to pin to.
  * * Returns 0 on success, < 0 on failure.
  */
-int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id, struct host_cpu *hcpu)
+int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id)
 {
     struct vcpu *vcpu; 
     int ret = 0; 
@@ -158,7 +161,6 @@ int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id, struct host_cpu *hcpu)
 
     /*store vcpu in the VM 's array */ 
     vm->vcpus[vcpu_id] = vcpu; 
-    vcpu->target_cpu_id = hcpu->logical_cpu_id; 
 
     /*set stack pointer to top of VM RAM */
     vcpu->regs.rsp = vm->guest_ram_size; 
@@ -167,7 +169,7 @@ int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id, struct host_cpu *hcpu)
     vm->online_vpcus++; 
 
     PDEBUG("KVX: VCPU %d for VM %d successfully pinned to Host CPU %d", 
-           vcpu_id, vm->vm_id, target_host_cpu);
+           vcpu_id, vm->vm_id, hcpu->logical_cpu_id);
 
 _unlock_vm: 
     spin_unlock(&vm->lock); 
@@ -227,7 +229,7 @@ int kvx_run_vm(struct kvx_vm *vm, int vcpu_id)
     vcpu->launched = 1; 
 
     /*spawn kthread to run the exexution loop */ 
-    vcpu->host_task = kthread(kvx_vcpu_loop, vcpu, "kvx_vm%d_vcpu%d", vm->vm_id, vcpu_id); 
+    vcpu->host_task = kthread_run(kvx_vcpu_loop, vcpu, "kvx_vm%d_vcpu%d", vm->vm_id, vcpu_id); 
     if(IS_ERR(vcpu->host_task))
     {
         pr_err("KVX: Failed to spawn kthread for VCPU %d\n", vcpu_id);
