@@ -8,7 +8,7 @@
 #define X86_CR4_VMXE_BIT    13 
 #define X86_CR4_VMXE        _BITUL(X86_CR4_VMXE_BIT)
 #define MSR_IA32_VMX_MISC       0x00000485
-
+#define VMCS_INSTRUCTION_ERROR_FIELD        0x00004400
 /*enablling vmx through IA32_FEATURE_CONTROL_MSR */ 
 #define IA32_FEATURE_CONTROL_LOCKED     (   1 << 0)
 #define IA32_FEATURE_CONTROL_MSR_VMXON_ENABLE_OUTSIDE_SMX (1 << 2)
@@ -163,17 +163,26 @@
 #define CR3_TARGET_VALUE3                   0x0000600E
 
 
+#define MSR_IA32_EFER      0xC0000080
+#define MSR_IA32_STAR      0xC0000081
+#define MSR_IA32_LSTAR     0xC0000082
+#define MSR_IA32_CSTAR     0xC0000083
+#define MSR_IA32_FMASK     0xC0000084
+
+#define MSR_IA32_FS_BASE   0xC0000100
+#define MSR_IA32_GS_BASE   0xC000010
+
 struct vmcs{
     u32 revision_id;
     u32 abort;
     char data[0]
-}__aligned(CONFIG_X86_PAGE_SIZE); 
+}__aligned(PAGE_SIZE); 
 
 struct vmxon_region{
     u32 revision_id; 
     u32 reserved; 
     char data[0]; 
-}__aligned(CONFIG_X86_PAGE_SIZE); 
+}__aligned(PAGE_SIZE); 
 
 struct vmx_exec_ctrls{
     uint32_t pin_based;
@@ -199,7 +208,9 @@ const uint32_t kvx_vmexit_msr_indices[] = {
     MSR_IA32_FS_BASE,
     MSR_IA32_GS_BASE
 };
-const size_t kvx_vmexit_count = ARRAY_SIZE(kvx_vmexit_msr_indices);
+
+#define KVX_VMEXIT_MSR_COUNT \ 
+    ARRAY_SIZE(kvx_vmexit_msr_indices)
 
 const uint32_t kvx_vmentry_msr_indices[] = {
     MSR_IA32_EFER,
@@ -211,8 +222,9 @@ const uint32_t kvx_vmentry_msr_indices[] = {
     MSR_IA32_GS_BASE
 };
 
-const size_t kvx_vmentry_count = ARRAY_SIZE(kvx_vmentry_msr_indices);
+#define KVX_VMENTRY_MSR_COUNT \
+    ARRAY_SIZE(kvx_vmentry_msr_indices)
 
-uint64_t kvx_vmentry_msr_values[kvx_vmentry_count]; 
+uint64_t kvx_vmentry_msr_values[KVX_VMENTRY_MSR_COUNT]; 
 
 #endif 

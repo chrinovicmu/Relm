@@ -2,19 +2,16 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/delay.h>
-#include "include/vmx.h"
-#include "include/vm.h"
+#include "../include/vmx.h"
+#include "../include/vm.h"
 
 static struct kvx_vm *my_vm = NULL; 
 
-static __init kvx_module_init(void)
+static int __init kvx_module_init(void)
 {
     int ret;
     int vm_id = 1; 
     int vcpu_id = 0; 
-   
-    hcpu = host_cpu_create(1,1);
-
 
     my_vm = kvx_create_vm(vm_id, "Test-VM-01", (uint64_t)KVX_VM_RAM_SIZE); 
     if(!my_vm)
@@ -39,7 +36,6 @@ static __init kvx_module_init(void)
 
     return 0; 
 _cleanup_vm:
-    kvx_free_host_cpu(hcpu); 
     kvx_destroy_vm(my_vm); 
     return ret; 
 }
@@ -52,7 +48,6 @@ static void __exit kvx_module_exit(void)
         if(my_vm->ops && my_vm->ops->print_stats)
             my_vm->ops->print_stats(my_vm); 
 
-        kvx_free_host_cpu(hcpu);
         kvx_destroy_vm(my_vm); 
         my_vm = NULL; 
     }

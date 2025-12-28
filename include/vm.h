@@ -1,13 +1,13 @@
-#ifnde VM_H
+#ifndef VM_H
 #define VM_H
 
 #include "vm.h"
 
 #define KVX_MAX_VCPUS 1  
 #define GUEST_STACK_ORDER 2 
-#define KVX_VM_RAM_SIZE 128 * 1024 * 1024; 
-
-
+#define KVX_VM_RAM_SIZE 128 * 1024 * 1024 
+#define HOST_CPU_ID 1 
+    
 /*represents a single virtual machine */ 
 
 enum vm_state {
@@ -26,7 +26,8 @@ struct kvx_vm_stats
     uint64_t start_time_ns; 
     uint64_t end_time_ns; 
 
-}
+}; 
+
 struct kvx_vm
 {
     int vm_id;
@@ -39,7 +40,7 @@ struct kvx_vm
     int online_vcpus;
     struct vcpu **vcpus; 
 
-    vm_state state; 
+    enum vm_state state; 
     struct kvx_vm_stats stats; 
     const struct kvx_vm_operations *ops; 
 
@@ -50,11 +51,13 @@ struct kvx_vm_operations{
     uint64_t (*get_uptime)(struct kvx_vm *vm); 
     uint64_t (*get_cpu_utilization)(struct kvx_vm *vm);
     void (*dump_regs)(struct kvx_vm *vm, int vcpu_id); 
-    void (*print_stas)(struct kvx_vm *vm); 
+    void (*print_stats)(struct kvx_vm *vm); 
 }; 
 
 
 struct kvx_vm * kvx_create_vm(int vm_id, const char *name, u64 ram_size); 
 void kvx_destroy_vm(struct kvx_vm *vm); 
-int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id, struct host_cpu); 
+int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id); 
+int kvx_run_vm(struct kvx_vm *vm, int vcpu_id); 
+
 #endif 

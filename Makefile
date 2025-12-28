@@ -16,7 +16,7 @@ $(MODULE_NAME)-y += src/vmx_asm.o
 
 ccflags-y := \
 	-I$(PWD)/include \
-	-Wall \
+#	-Wall \
 	-Wextra \
 	-Wno-unused-parameter \
 	-Wno-missing-field-initializers \

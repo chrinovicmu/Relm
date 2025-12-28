@@ -1,6 +1,4 @@
 
-#vm_lanucher.s 
-#
 #this file contains the vmx transition code. 
 #it is reposible for: 
 #   - loading guest gneral purpost registers 

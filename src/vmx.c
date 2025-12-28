@@ -12,10 +12,9 @@
 #include <asm/processor.h>
 #include <asm/msr.h>
 
-#include "vmx.h"
-#include "vmcs.h"
-#include "vmx_ops.h"
-#include "vmx_consts.h"
+#include "../include/vmx.h"
+#include "../include/vmcs.h"
+#include "../include/vmx_ops.h"
 #include "../utils/utils.h"
 
 static int kvx_setup_vmxon_region(struct host_cpu *hcpu);
@@ -170,7 +169,7 @@ void kvx_vcpu_unpin_and_stop(struct vcpu *vcpu)
     kthread_stop(vcpu->host_task); 
 }
 
-struct host_cpu * kvx_host_cpu_create(int logical_cpu_id)
+static struct host_cpu * kvx_host_cpu_create(int logical_cpu_id)
 {
     struct host_cpu * hcpu; 
     size_t vcpu_array_size; 
@@ -194,7 +193,7 @@ struct host_cpu * kvx_host_cpu_create(int logical_cpu_id)
     return hcpu; 
 }
 
-void kvx_destroy_host_cpu(struct host_cpu *hcpu)
+static void kvx_destroy_host_cpu(struct host_cpu *hcpu)
 {
     if(hcpu)
     {

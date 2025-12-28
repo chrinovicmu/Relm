@@ -1,7 +1,9 @@
-#ifndef VM_OPS_H 
-#define VM_OPS_H
+#ifndef VMX_OPS_H 
+#define VMX_OPS_H
 
-#include <stdint.h>
+#include "vmcs_state.h"
+#include "vmcs.h"
+
 asmlinkage void ex_handler_rdmsr_unsafe(void); 
 asmlinkage void ex_handler_rdmsr_unsafe(void)
 {
@@ -158,9 +160,9 @@ static inline int _vmwrite(uint64_t field_enc, uint64_t value)
 
     else
     {
-        uint64_t error_code; 
+        uint64_t error_code = __vmread(VMCS_INSTRUCTION_ERROR_FIELD); 
 
-        if(_vmread(VMCS_INSTRUCTION_ERROR_FIELD, &error_code) == 0)
+        if(error_code == 0)
         {
             return (int)error_code; 
         } 
@@ -224,12 +226,12 @@ static inline int _get_vmcs_size(void)
 
     if(!vmcs_size)
     {
-        printk(KERN_ERR "Invalid VMCS size from VMX_BASIC MSR: 0x%ll\n", vmx_basic); 
+        pr_err("Invalid VMCS size from VMX_BASIC MSR: 0x%ll\n", vmx_basic); 
         return -1; 
 
     }
 
-    printk(KERN_INFO "VMX_BASIC MSR: 0x%llx, VMCS size: %u bytes\n", vmx_basic, vmcs_size);
+    pr_err("VMX_BASIC MSR: 0x%llx, VMCS size: %u bytes\n", vmx_basic, vmcs_size);
     return vmcs_size;
 }
 

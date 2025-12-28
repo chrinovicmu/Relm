@@ -1,5 +1,5 @@
-#ifndef UTILS 
-#define UTILS 
+#ifndef UTILS_H  
+#define UTILS_H
 
 #include <linux/kernel.h>
 #include <linux/slab.h>

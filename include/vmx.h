@@ -37,7 +37,7 @@ struct vcpu {
     struct host_cpu *hcpu;
 
     int vcpu_id;
-    int host_cpu_id;  
+    int target_cpu_id;  
 
     int launched; 
     enum vcpu_state state; 
@@ -46,7 +46,7 @@ struct vcpu {
     spinlock_t lock; 
     wait_queue_head_t wq; 
 
-    struct task_struct *host_struct; 
+    struct task_struct *host_task; 
 
     uint8_t host_stack; 
     uint64_t host_rsp; 
@@ -108,7 +108,6 @@ struct host_cpu
     spinlock_t lock; 
 };
 
-struct host_cpu *host_cpu_create(int logical_cpu_id, int max_vcpus);
 struct vcpu *kvx_vcpu_alloc_init(struct kvx_vm *vm, int vcpu_id);
 int kvx_vcpu_pin_to_cpu(struct vcpu *vcpu, int target_cpu_id);
 void kvx_vcpu_unpin_and_stop(struct vcpu *vcpu);

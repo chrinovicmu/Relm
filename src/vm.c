@@ -1,8 +1,8 @@
 #include <linux/kthread.h> 
-#include <sched.h>
+#include <linux/sched.h>
 #include <linux/smp.h> 
-#include "include/vmx.h"
-#include "include/vm.h"
+#include "../include/vmx.h"
+#include "../include/vm.h"
 
 extern void kvx_vmentry_asm(struct guest_regs, int launched); 
 
@@ -169,7 +169,7 @@ int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id)
     vm->online_vpcus++; 
 
     PDEBUG("KVX: VCPU %d for VM %d successfully pinned to Host CPU %d", 
-           vcpu_id, vm->vm_id, hcpu->logical_cpu_id);
+           vcpu_id, vm->vm_id, vcpu->target_cpu_id);
 
 _unlock_vm: 
     spin_unlock(&vm->lock); 
@@ -204,7 +204,7 @@ static int kvx_vcpu_loop(void *data)
         */ 
         if(vcpu->launched)
         {
-            uint64_t error = __vmread(VM_INSTRUCTION_ERROR);
+            uint64_t error = __vmread(VMCS_INSTRUCTION_ERROR_FIELD);
             if(error != 0)
             {
                 pr_err("KVX: Hardware Error: %llu\n", error); 
