@@ -1,5 +1,3 @@
-
-
 MODULE_NAME := kvx
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
@@ -10,18 +8,12 @@ obj-m := $(MODULE_NAME).o
 $(MODULE_NAME)-y := \
 	src/module.o \
 	src/vm.o \
-	src/vmx.o
+	src/vmx.o \
+	src/vmx_asm.o
 
-$(MODULE_NAME)-y += src/vmx_asm.o
-
-ccflags-y := \
-	-I$(PWD)/include \
-#	-Wall \
-	-Wextra \
-	-Wno-unused-parameter \
-	-Wno-missing-field-initializers \
-	-fno-omit-frame-pointer
-
+# Use ccflags-y to add the include directory to the search path
+# We use $(src) which is a Kbuild variable pointing to your module source root
+ccflags-y := -I$(src)/include -I$(src)/utils
 
 .PHONY: all clean modules install unload reload
 
@@ -32,11 +24,4 @@ modules:
 
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
-
-install: modules
-	sudo insmod $(MODULE_NAME).ko
-
-unload:
-	sudo rmmod $(MODULE_NAME)
-
-reload: unload install
+# ... rest of your file

@@ -9,6 +9,17 @@ asmlinkage void ex_handler_rdmsr_unsafe(void)
 {
 
 }
+static inline void cpuid(uint32_t leaf,
+                         uint32_t *eax,
+                         uint32_t *ebx,
+                         uint32_t *ecx,
+                         uint32_t *edx)
+{
+    asm volatile("cpuid"
+        : "=a"(*eax), "=b"(*ebx),
+        "=c"(*ecx), "=d"(*edx)
+        : "a"(leaf));
+}
 
 static inline unsigned long long notrace __rdmsr1(unsigned int msr)
 {
@@ -35,6 +46,15 @@ static inline unsigned long long notrace __rdmsr1(unsigned int msr)
     return ((unsigned long long)high << 32) | low; 
 }
 
+bool cpu_has_vpid(void)
+{
+    uint32_t eax, ebx, ecx, edx;
+
+    /* CPUID leaf 1: ECX[5] == VPID */
+    cpuid(1, &eax, &ebx, &ecx, &edx);
+
+    return (ecx & (1u << 5)) != 0;
+}
 
 static inline uint64_t _read_cr0(void)
 {

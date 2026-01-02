@@ -1,4 +1,3 @@
-#include <cerrno>
 #include <linux/slab.h>
 #include <linux/gfp.h>
 #include <linux/mm.h>
@@ -12,10 +11,11 @@
 #include <asm/processor.h>
 #include <asm/msr.h>
 
-#include "../include/vmx.h"
-#include "../include/vmcs.h"
-#include "../include/vmx_ops.h"
-#include "../utils/utils.h"
+#include <stdint.h>
+#include <vmx.h>
+#include <vmcs.h>
+#include <vmx_ops.h>
+#include <utils.h>
 
 static int kvx_setup_vmxon_region(struct host_cpu *hcpu);
 static int kvx_setup_vmcs_region(struct vcpu *vcpu);
@@ -690,9 +690,12 @@ static void kvx_init_exec_controls(struct vcpu *vcpu)
     controls->secondary_proc = 
         VMCS_PROC2_ENABLE_EPT |
         VMCS_PROC2_RDTSCP | 
-        VMCS_PROC2_VPID | 
         VMCS_PROC2_UNRESTRICTED_GUEST |
         VMCS_PROC2_ENABLE_VMFUNC; 
+
+    if(cpu_has_vpid())
+        controls->secondary_proc = 
+            controls->secondary_proc | VMCS_PROC2_VPID; 
 
     controls->vm_entry = 
         VMCS_ENTRY_LOAD_GUEST_PAT | 
@@ -767,7 +770,7 @@ int kvx_setup_exec_controls(struct vcpu *vcpu)
 
 struct vcpu *kvx_vcpu_alloc_init(struct kvx_vm *vm, int vcpu_id)
 {
-    if(!kvx_vm || vcpu_id >= vm->max_vcpus)
+    if(!kvx_vm)
         return -EINVAL; 
 
     struct vcpu *vcpu;
@@ -823,6 +826,12 @@ struct vcpu *kvx_vcpu_alloc_init(struct kvx_vm *vm, int vcpu_id)
     {
         pr_err("Failed to setup VMX execution controls\n"); 
         goto _out_free_vmcs;  
+    }
+
+    if(cpu_has_vpid())
+    {
+        uint64_t vpid = vcpu->vpid; 
+        CHECK_VMWRITE(VMCS_VPID, vpidI); 
     }
 
      /* Setup IO bitmap */
@@ -1093,7 +1102,7 @@ void kvx_dump_vcpu(struct vcpu *vcpu)
            (uint32_t) __vmread(GUEST_SYSENTER_CS), 
             (uint32_t)(__vmread(GUEST_SYSENTER_EIP) & 0xFFFFFFFF)); 
     
-    
+/*    
     pr_info("\n*** Host State ***\n\n");
 
     pr_info("RIP = 0x%016llx (%ps)  RSP = 0x%016llx\n",
@@ -1129,9 +1138,8 @@ void kvx_dump_vcpu(struct vcpu *vcpu)
         (u32)__vmread(HOST_SYSENTER_CS),
         (u32)__vmread(HOST_SYSENTER_EIP));
 
-    /* Optional fields depending on VM-exit controls */
-    if (__vmread(VM_EXIT_CONTROLS) &
-        (VM_EXIT_LOAD_HOST_EFER | VM_EXIT_LOAD_HOST_PAT)) {
+    if (__vmread(VMCS_EXIT_CONTROLS) &
+        (VMCS_EXIT_LOAD_HOST_EFER | VMCS_EXIT_LOAD_HOST_PAT)) {
         pr_info("EFER=0x%016llx PAT=0x%016llx\n",
             __vmread(HOST_EFER),
             __vmread(HOST_PAT));
@@ -1142,5 +1150,5 @@ void kvx_dump_vcpu(struct vcpu *vcpu)
         pr_info("PerfGlobalCtrl=0x%016llx\n",
             __vmread(HOST_PERF_GLOBAL_CTRL));
     }
-
+*/ 
 }

@@ -32,7 +32,7 @@
 #define MSR_IA32_VMX_PROCBASED_CTLS         0x00000482
 #define MSR_IA32_VMX_EXIT_CTLS              0x00000483 
 #define MSR_IA32_VMX_ENTRY_CTLS             0x00000484 
-#define MSR_IA32_VMX_PROCBASED_CTLS2        0x0000048B 
+#define MSR_IA32_VMX_PROCBASED_CTLS2        0x0000048B
 #define MSR_IA32_VMX_EPT_VPID_CAP           0x0000048C //EPT & VPID capabilities 
 /*control field encodings  */  
 
@@ -76,6 +76,7 @@
 // =======================
 // Secondary Processor-Based VMCS Controls (CTLS2)
 // =======================
+#define VMCS_VPID                   (0X00000000)
 #define VMCS_PROC2_ENABLE_EPT        (1u << 1)  // Enable EPT (Extended Page Tables)
 #define VMCS_PROC2_RDTSCP            (1u << 3)  // RDTSCP instruction available to guest
 #define VMCS_PROC2_VPID              (1u << 5)  // Enable VPID (Virtual Processor IDs)

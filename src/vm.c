@@ -1,8 +1,11 @@
 #include <linux/kthread.h> 
 #include <linux/sched.h>
-#include <linux/smp.h> 
-#include "../include/vmx.h"
-#include "../include/vm.h"
+#include <linux/smp.h>
+#include <linux/slab.h>     
+#include <linux/vmalloc.h> 
+#include <vmx.h>
+#include <vm.h>
+#include <utils.h>
 
 extern void kvx_vmentry_asm(struct guest_regs, int launched); 
 
@@ -15,7 +18,7 @@ static u64 kvx_op_get_uptime(struct kvx_vm *vm)
 static void kvx_op_print_stats(struct kvx_vm *vm)
 {
     pr_info("KVX [%s] Stats: Exits=%llu, CPUID=%llu, HLT=%llu\n",
-            vm->name, vm->stats.total_exits, 
+            vm->vm_name, vm->stats.total_exits, 
             vm->stats.cpuid_exits, vm->stats.hlt_exits);
 }
 
@@ -25,7 +28,7 @@ static void kvx_op_dump_regs(struct kvx_vm *vm, int vcpu_id)
     if (!vcpu) return;
     
     pr_info("KVX [%s] VCPU %d RIP: 0x%llx RSP: 0x%llx\n",
-            vm->name, vcpu_id, vcpu->regs.rip, vcpu->regs.rsp);
+            vm->vm_name, vcpu_id, vcpu->regs.rip, vcpu->regs.rsp);
 }
 
 static const struct kvx_vm_operations kvx_default_ops = {
@@ -41,7 +44,7 @@ struct kvx_vm * kvx_create_vm(int vm_id, const char *vm_name,
     struct kvx_vm *vm;
     struct vcpu *vcpu; 
 
-    vm = kzalloc(sizeof(kvx_vm), GFP_KERNEL); 
+    vm = kzalloc(sizeof(struct kvx_vm), GFP_KERNEL); 
     if(!vm)
     {
         pr_err("KVX: Failed to allocate VM header\n"); 
@@ -51,7 +54,7 @@ struct kvx_vm * kvx_create_vm(int vm_id, const char *vm_name,
     vm->vm_id = vm_id; 
     vm->state = VM_STATE_CREATED; 
     vm->max_vcpus = KVX_MAX_VCPUS; 
-    vm->online_vpcus = 0; 
+    vm->online_vcpus = 0; 
     vm->ops = &kvx_default_ops; 
 
     if(vm_name)
@@ -144,7 +147,7 @@ int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id)
 
     spin_lock(&vm->lock); 
 
-    if(vcpu_id >= vm->max_vcpus || vm->vcpus[vcpu_id] != NULL)
+    if(vcpu_id =< 0 || vcpu_id >= vm->max_vcpus || vm->vcpus[vcpu_id] != NULL)
     {
         pr_err("KVX: Invalid or already existing VCPU ID %d.\n", vcpu_id); 
         ret = -EINVAL; 
@@ -166,7 +169,7 @@ int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id)
     vcpu->regs.rsp = vm->guest_ram_size; 
 
     vcpu->state = VCPU_STATE_INITIALIZED; 
-    vm->online_vpcus++; 
+    vm->online_vcpus++; 
 
     PDEBUG("KVX: VCPU %d for VM %d successfully pinned to Host CPU %d", 
            vcpu_id, vm->vm_id, vcpu->target_cpu_id);
