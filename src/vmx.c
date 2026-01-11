@@ -888,33 +888,8 @@ struct vcpu *kvx_vcpu_alloc_init(struct kvx_vm *vm, int vpid)
         goto _out_free_msr_bitmap; 
     }
 
-    if(vcpu->controls->secondary_proc & VMCS_PROC2_ENABLE_EPT)
-    {
-        ret = kvx_vpcu_setup_ept(vcpu); 
-        if(ret < 0)
-        {
-            pr_err("KVX: Failed to setup EPT: %d\n", ret); 
-            goto _out_free_everthing; 
-        }
-
-        ret = kvx_vcpu_map_guest_memory(vcpu, KVX_VM_GUEST_RAM_SIZE);
-        if(ret < 0)
-        {
-            pr_err("KVX: Failed to map guest memory: %d\n", ret); 
-            goto _out_free_ept; 
-        }
-    }
-
-    pr_info("VCPU %d Initialized successfuly\n", vpid); 
-
     return vcpu; 
 
-_out_free_ept:
-    if(vcpu->ept)
-    {
-        kvx_ept_context_destroy(vcpu->ept); 
-        vcpu->ept = NULL; 
-    }
 _out_free_msr_bitmap:
     kvx_free_msr_bitmap(vcpu);
 _out_free_io_bitmap:
