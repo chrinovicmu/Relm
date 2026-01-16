@@ -4,7 +4,7 @@
 
 ## License
 
-Dual BSD/GPL
+Dual GPL-2.0
 
 ## Author
 
