@@ -13,7 +13,7 @@ static int __init kvx_module_init(void)
     int vm_id = 1; 
     int vpid = 1; 
 
-    my_vm = kvx_create_vm(vm_id, "Test-VM-01", (uint64_t)KVX_VM_RAM_SIZE); 
+    my_vm = kvx_create_vm(vm_id, "Test-VM-01", (uint64_t)KVX_VM_GUEST_RAM_SIZE); 
     if(!my_vm)
     {
         pr_err("KVX: VM creation failed - out of memory or EPT srtup failed\n"); 

@@ -3,6 +3,9 @@
 #include <linux/smp.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
+#include <linux/mm.h>        
+#include <linux/page-flags.h>
+#include <linux/highmem.h>   
 #include <vmx.h>
 #include <vm.h>
 #include <ept.h>
@@ -23,7 +26,7 @@ struct vcpu *kvx_get_current_vcpu(void)
 /*per-CPU varaible holding the currently executing vcpu.
  * allows handle_vmesit to find VCPU structure wuthout passing
  * it as a parameter*/
-extern int kvx_vmentry_asm(struct vcpu_regs *regs, int launched);
+extern int kvx_vmentry_asm(struct guest_regs *regs, int launched);
 extern void kvx_vmexit_handler(void);
 
 static const char * const vm_state_names[] = {
@@ -40,16 +43,10 @@ static inline const char *vm_state_to_string(enum vm_state state)
     return vm_state_names[state] ? vm_state_names[state] : "???";
 }
 
-static inline const char *vm_state_to_string(enum vm_state state)
-{
-    if ((unsigned int)state >= ARRAY_SIZE(vm_state_names))
-        return "UNKNOWN";
-    return vm_state_names[state] ? vm_state_names[state] : "???";
-}
 static u64 kvx_op_get_uptime(struct kvx_vm *vm)
 {
     if(!vm)
-        return; 
+        return 0; 
 
     if (!vm) return 0;
     return ktime_to_ns(ktime_get()) - vm->stats.start_time_ns;
@@ -58,7 +55,7 @@ static u64 kvx_op_get_uptime(struct kvx_vm *vm)
 static void kvx_op_print_stats(struct kvx_vm *vm)
 {
     if(!vm)
-        return 
+        return; 
 
     pr_info("KVX [%s] Stats: Exits=%llu, CPUID=%llu, HLT=%llu\n",
             vm->vm_name, vm->stats.total_exits,
@@ -77,7 +74,7 @@ static void kvx_op_dump_regs(struct kvx_vm *vm, int vpid)
         return;
    
     pr_info("KVX [%s] VCPU %d RIP: 0x%llx RSP: 0x%llx\n",
-            vm->vm_name, vcpu_id, vcpu->regs.rip, vcpu->regs.rsp);
+            vm->vm_name, vpid, vcpu->regs.rip, vcpu->regs.rsp);
 }
 
 static const struct kvx_vm_operations kvx_default_ops = {
@@ -133,7 +130,7 @@ int kvx_vm_allocate_guest_ram(struct kvx_vm *vm, uint64_t size, uint64_t gpa_sta
 
         region->pages[i] = page;
         gpa = gpa_start + (i * PAGE_SIZE);
-        hpa = page_to_phys(page);
+        hpa = PFN_PHYS(page_to_pfn(page));
 
         ret = kvx_ept_map_page(vm->ept, gpa, hpa, EPT_RWX);
         if(ret < 0)
@@ -262,7 +259,7 @@ struct kvx_vm * kvx_create_vm(int vm_id, const char *vm_name,
         goto _out_free_memory;
     }
 
-    vm->state = VM_INITIALIZED;
+    vm->state = VM_STATE_INITIALIZED;
 
     pr_info("KVX: VM '%s' (ID: %d) created with %llu MB RAM\n",
             vm->vm_name, vm->vm_id, (ram_size >> 20));
@@ -319,13 +316,15 @@ void kvx_destroy_vm(struct kvx_vm *vm)
     pr_info("KVX: VM destruction complete.\n");
 }
 
-int kvx_vm_copy_to_guest(struct kvx_vm *vm, int gpa, const void *data, int size)
+int kvx_vm_copy_to_guest(struct kvx_vm *vm, uint64_t gpa,
+                         const void *data, size_t size)
 {
     struct guest_mem_region *region;
     uint64_t region_offset;
     uint64_t page_index;
     uint64_t page_offset;
     uint64_t bytes_to_copy;
+
     const uint8_t *src = (const uint8_t *)data;
     uint8_t *page_va;
     size_t copied = 0;
@@ -468,7 +467,7 @@ static int kvx_vcpu_loop(void *data)
         pr_err("KVX: [VPID=%u] VM-%s FAILED!\n",
                vcpu->vpid, vcpu->launched ? "RESUME" : "LAUNCH");
        
-        uint64_t error = __vmread(VM_INSTRUCTION_ERROR);
+        uint64_t error = __vmread(VMCS_INSTRUCTION_ERROR_FIELD);
        
         pr_err("KVX: [VPID=%u] VM instruction error: %llu\n",
                vcpu->vpid, error);
@@ -602,7 +601,7 @@ int kvx_run_vm(struct kvx_vm *vm)
         return -EINVAL; 
     }
 
-    if(vm->state != VM_STATE_INITILIZED && vm->state != VM_STATE_STOPPED) 
+    if(vm->state != VM_STATE_INITIALIZED && vm->state != VM_STATE_STOPPED) 
     {
         pr_err("KVX: VM '%s' is not in runnable state (current state : %s)\n",
                vm->vm_name, 
@@ -661,7 +660,7 @@ int kvx_run_vm(struct kvx_vm *vm)
     {
         pr_err("KVX: Failed to start any VCPUs for VM '%s'\n",
                vm->vm_name);
-        vm->state = VM_STOPPED;
+        vm->state = VM_STATE_STOPPED;
         return -EIO;
     }
 
@@ -686,7 +685,7 @@ _stop_all_vcpus:
     }
 
     spin_lock(&vm->lock);
-    vm->state = VM_INITIALIZED;
+    vm->state = VM_STATE_INITIALIZED;
     spin_unlock(&vm->lock);
 
     return ret;
@@ -738,7 +737,7 @@ int kvx_stop_vm(struct kvx_vm *vm)
     }
 
     spin_lock(&vm->lock);
-    vm->state = VM_STOPPED;
+    vm->state = VM_STATE_STOPPED;
     spin_unlock(&vm->lock);
 
     pr_info("KVX: VM '%s' stopped (%d VCPUs stopped)\n",

@@ -5,7 +5,7 @@
 #include <vmx.h> 
 
 #define EPT_LEVLS               4
-#define EPT_ENTRIES_PER_TABALE  512 
+#define EPT_ENTRIES_PER_TABLE  512 
 
 /*EPT page sizes */ 
 #define EPT_PAGE_SIZE_4KB       (4ULL * 1024)
@@ -41,10 +41,10 @@
 
 #define EPT_ADDR_MASK           0x000FFFFFFFFFF000ULL
 
-#define EPT_RWX                 (EPT_READ_ACCESS | EPT_WRITE_ACCESS | EPT_EXEC_ACCESS)
-#define EPT_RW                  (EPT_READ_ACCESS | EPT_WRITE_ACCESS)
-#define EPT_RX                  (EPT_READ_ACCESS | EPT_EXEC_ACCESS)
-#define EPT_R                   (EPT_READ_ACCESS)
+#define EPT_RWX                 (EPT_ACCESS_READ | EPT_ACCESS_WRITE | EPT_ACCESS_EXEC)
+#define EPT_RW                  (EPT_ACCESS_READ | EPT_ACCESS_WRITE)
+#define EPT_RX                  (EPT_ACCESS_READ | EPT_ACCESS_EXEC)
+#define EPT_R                   (EPT_ACCESS_READ)
 
 /*EPTP format */ 
 
@@ -77,19 +77,19 @@ typedef uint64_t ept_entry_t;
 
 /*EPT table structures - eahc is a page contaianing 512 entries */ 
 typedef struct{
-    ept_entry_t entries[EPT_ENTRIES_PER_TABALE]; 
+    ept_entry_t entries[EPT_ENTRIES_PER_TABLE]; 
 } __attribute__((aligned(4096))) ept_pml4_t; 
 
 typedef struct{
-    ept_entry_t entries[EPT_ENTRIES_PER_TABALE]; 
+    ept_entry_t entries[EPT_ENTRIES_PER_TABLE]; 
 } __attribute__((aligned(4096))) ept_pdpt_t; 
 
 typedef struct{
-    ept_entry_t entries[EPT_ENTRIES_PER_TABALE]; 
+    ept_entry_t entries[EPT_ENTRIES_PER_TABLE]; 
 } __attribute__((aligned(4096))) ept_pd_t; 
 
 typedef struct{
-    ept_entry_t entries[EPT_ENTRIES_PER_TABALE]; 
+    ept_entry_t entries[EPT_ENTRIES_PER_TABLE]; 
 } __attribute__((aligned(4096))) ept_pt_t; 
 
 struct ept_context

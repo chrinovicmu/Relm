@@ -4,10 +4,10 @@
 #include "vmcs_state.h"
 #include "vmcs.h"
 
-asmlinkage void ex_handler_rdmsr_unsafe(void); 
-asmlinkage void ex_handler_rdmsr_unsafe(void)
+static __always_inline void __attribute__((used)) ex_handler_rdmsr_unsafe(void)
 {
-
+    /*Empty handler - just return to fixup code
+    * The exception table machinery handles the actual recovery*/ 
 }
 static inline void _cpuid(uint32_t leaf,
                          uint32_t *eax,
@@ -34,11 +34,12 @@ static inline unsigned long long notrace __rdmsr1(unsigned int msr)
         "2:\n"
         /*switch to exception table temporarily */ 
         ".pushsection __ex_table, \"a\"\n"
-        ".balign 8\n"
-        ".long (1b - .), (2b - .), ex_handler_rdmsr_unsafe - .\n"
+        ".balign 4\n"
+        ".long (1b - .), (2b - .), (ex_handler_rdmsr_unsafe - .)\n"
         ".popsection\n"
 
-        : "=a" (low), "=d" (high) 
+        : "=a" (low),
+          "=d" (high) 
         : "c" (msr)
         : "memory"
     ); 
@@ -46,7 +47,7 @@ static inline unsigned long long notrace __rdmsr1(unsigned int msr)
     return ((unsigned long long)high << 32) | low; 
 }
 
-bool _cpu_has_vpid(void)
+static inline bool _cpu_has_vpid(void)
 {
     uint32_t eax, ebx, ecx, edx;
 

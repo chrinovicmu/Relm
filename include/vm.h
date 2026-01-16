@@ -3,7 +3,7 @@
 
 
 #include <vmx.h>
-#include <vm_ops.h>
+#include <vmx_ops.h>
 #include <ept.h> 
 
 #define KVX_MAX_VCPUS 1  
@@ -23,7 +23,8 @@ struct guest_mem_region
 }; 
 
 enum vm_state {
-    VM_STATE_CREATED, 
+    VM_STATE_CREATED,
+    VM_STATE_INITIALIZED, 
     VM_STATE_RUNNING, 
     VM_STATE_SUSPENDED, 
     VM_STATE_STOPPED
@@ -45,7 +46,7 @@ struct kvx_vm
     int vm_id;
     char vm_name[16];
 
-    struct guest_mem_region mem; 
+    struct guest_mem_region *mem_regions; 
     struct ept_context *ept; 
     uint64_t total_guest_ram; 
 
@@ -71,10 +72,11 @@ struct kvx_vm_operations{
 struct kvx_vm * kvx_create_vm(int vm_id, const char *name, uint64_t ram_size); 
 void kvx_destroy_vm(struct kvx_vm *vm); 
 int kvx_vm_add_vcpu(struct kvx_vm *vm, int vcpu_id); 
-kvx_vm_allocate_guest_ram(struct kvx_vm *vm, uint64_t size, uint64_t gpa_start); 
+int kvx_vm_allocate_guest_ram(struct kvx_vm *vm, uint64_t size, uint64_t gpa_start); 
 int kvx_vm_map_mmio_region(struct kvx_vm *vm, uint64_t gpa, uint64_t hpa, uint64_t size); 
 void kvx_vm_free_guest_memory(struct kvx_vm *vm); 
 int kvx_vm_copy_to_guest(struct kvx_vm *vm, uint64_t gpa, const void *data, size_t size); 
-int kvx_run_vm(struct kvx_vm *vm, int vcpu_id); 
+int kvx_run_vm(struct kvx_vm *vm);
+int kvx_stop_vm(struct kvx_vm *vm);
 
 #endif 

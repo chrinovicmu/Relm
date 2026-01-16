@@ -9,7 +9,8 @@ $(MODULE_NAME)-y := \
 	src/module.o \
 	src/vm.o \
 	src/vmx.o \
-	src/vmx_asm.o
+	src/vmx_asm.o \
+	src/ept.o 
 
 # Use ccflags-y to add the include directory to the search path
 # We use $(src) which is a Kbuild variable pointing to your module source root

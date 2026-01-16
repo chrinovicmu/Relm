@@ -11,6 +11,24 @@
 #include <vmx_ops.h>
 #include <utils.h> 
 
+static inline void _invept(uint64_t type, uint64_t eptp)
+{
+    struct{
+        uint64_t eptp; 
+        uint64_t reserved; 
+    }__attribute__((packed)) descriptor = {
+        .eptp = eptp, 
+        .reserved = 0; 
+    }; 
+
+    __asm__ __volatile__ (
+        "invept %0, %1\n"
+        : 
+        :"m" (descriptor), 
+         "r" (type)
+        :"memory", "cc"
+    ); 
+}
 
 bool kvx_ept_check_support(void)
 {
@@ -58,7 +76,7 @@ int kvx_setup_ept(struct vcpu *vcpu)
     if(!kvx_ept_check_support())
     {
         pr_err("KVX: EPT not supported on this CPU\n"); 
-        return -ENOTSUP; 
+        return -ENOTSUPP; 
     }
 
     if(!kvx_ept_enabled(vcpu))
@@ -185,7 +203,7 @@ static void kvx_ept_free_table(void *table_va, int level)
         ept_entry_t entry = entries[i]; 
 
         /*skip empty entries */ 
-        if(!(entry & EPT_READ_ACCESS))
+        if(!(entry & EPT_ACCESS_READ))
             continue; 
 
         /*check if this is a large page */ 
@@ -238,7 +256,7 @@ static void *kvx_ept_get_or_create_table(ept_entry_t *entry_ptr, int level)
     void *table_va; 
     uint64_t table_pa; 
 
-    if(entry & EPT_READ_ACCESS)
+    if(entry & EPT_ACCESS_READ)
     {
         table_pa = entry & EPT_ADDR_MASK; 
     }
@@ -280,13 +298,13 @@ int kvx_ept_map_page(struct ept_context *ept, uint64_t gpa,
     }
 
     /*ensure at least read permission is set */ 
-    if(!(flags & EPT_READ_ACCESS))
+    if(!(flags & EPT_ACCESS_READ))
     {
         pr_err("KVX: EPT mapping must have at least read access\n");
         return -EINVAL; 
     }
 
-    spin_lock_t_irqsave(&ept->lock, irq_flags); 
+    spin_lock_irqsave(&ept->lock, irq_flags); 
 
     uint32_t pml4_index = EPT_PML4_INDEX(gpa); 
 
@@ -385,7 +403,7 @@ int kvx_ept_map_range(struct ept_context *ept, uint64_t gpa_start,
 /*walks EPT table to find the leaf entry and clear it */ 
 int kvx_unmap_page(struct ept_context *ept, uint64_t gpa)
 {
-    ept_pdpt *pdpt; 
+    ept_pdpt_t *pdpt; 
     ept_pd_t *pd; 
     ept_pt_t *pt; 
     ept_entry_t *leaf_entry; 
@@ -402,7 +420,7 @@ int kvx_unmap_page(struct ept_context *ept, uint64_t gpa)
 
     pml4_idx = EPT_PML4_INDEX(gpa); 
 
-    if(!(ept->pml4->entries[pml4_idx] & EPT_READ_ACCESS))
+    if(!(ept->pml4->entries[pml4_idx] & EPT_ACCESS_READ))
     {
         spin_unlock_irqrestore(&ept->lock, irq_flags); 
         return -ENOENT; 
@@ -413,7 +431,7 @@ int kvx_unmap_page(struct ept_context *ept, uint64_t gpa)
 
     pdpt_idx = EPT_PDPT_INDEX(gpa); 
 
-    if(!(pdpt->entries[pdpt_idx] & EPT_READ_ACCESS))
+    if(!(pdpt->entries[pdpt_idx] & EPT_ACCESS_READ))
     {
         spin_unlock_irqrestore(&ept->lock, irq_flags); 
         return -ENOENT; 
@@ -424,7 +442,7 @@ int kvx_unmap_page(struct ept_context *ept, uint64_t gpa)
 
     pd_idx = EPT_PD_INDEX(gpa); 
 
-    if(!(pd->entries[pd_idx] & EPT_READ_ACCESS))
+    if(!(pd->entries[pd_idx] & EPT_ACCESS_READ))
     {
         spin_unlock_irqrestore(&ept->lock, irq_flags); 
         return -ENOENT; 
@@ -437,7 +455,7 @@ int kvx_unmap_page(struct ept_context *ept, uint64_t gpa)
 
     leaf_entry = &pt->entries[pt_idx]; 
 
-    if(!(*leaf_entry & EPT_READ_ACCESS))
+    if(!(*leaf_entry & EPT_ACCESS_READ))
     {
         spin_unlock_irqrestore(&ept->lock, irq_flags); 
         return -ENOENT; 
@@ -449,18 +467,20 @@ int kvx_unmap_page(struct ept_context *ept, uint64_t gpa)
     ept->stats.pages_4kb--; 
     ept->stats.total_mapped -= EPT_PAGE_SIZE_4KB; 
 
-    spin_unlock_irqrestore(&ept->lock, irqflags);
+    spin_unlock_irqrestore(&ept->lock, irq_flags);
 
     /*invalidate EPT TLB entries for the entir context to ensure consistency */ 
     kvx_ept_invalidate_context(ept); 
 
-    PDEBUG("KVX: Unmapped GPA 0x%llx\n", gpa)
+    PDEBUG("KVX: Unmapped GPA 0x%llx\n", gpa);
+
+    return 0; 
 }
 
 /*walk EPT tables to find the HPA of given GPA */  
 int kvx_get_mapping(struct ept_context *ept, uint64_t gpa, uint64_t *hpa)
 {
-    ept_pdpt *pdpt; 
+    ept_pdpt_t *pdpt; 
     ept_pd_t *pd; 
     ept_pt_t *pt; 
     ept_entry_t *leaf_entry; 
@@ -478,18 +498,18 @@ int kvx_get_mapping(struct ept_context *ept, uint64_t gpa, uint64_t *hpa)
 
     pml4_idx = EPT_PML4_INDEX(gpa); 
 
-    if(!(ept->pml4->entries[pml4_idx] & EPT_READ_ACCESS))
+    if(!(ept->pml4->entries[pml4_idx] & EPT_ACCESS_READ))
     {
         spin_unlock_irqrestore(&ept->lock, irq_flags); 
         return -ENOENT; 
     }
 
-    pdpt = (ept_pdpt*)phys_to_virt(
+    pdpt = (ept_pdpt_t*)phys_to_virt(
         ept->pml4->entries[pml4_idx] & EPT_ADDR_MASK); 
 
     pdpt_idx = EPT_PDPT_INDEX(gpa); 
 
-    if(!(pdpt->entries[pdpt_idx] & EPT_READ_ACCESS))
+    if(!(pdpt->entries[pdpt_idx] & EPT_ACCESS_READ))
     {
         spin_unlock_irqrestore(&ept->lock, irq_flags); 
         return -ENOENT; 
@@ -500,7 +520,7 @@ int kvx_get_mapping(struct ept_context *ept, uint64_t gpa, uint64_t *hpa)
 
     pd_idx = EPT_PD_INDEX(gpa); 
 
-    if(!(pd->entries[pd_idx] & EPT_READ_ACCESS))
+    if(!(pd->entries[pd_idx] & EPT_ACCESS_READ))
     {
         spin_unlock_irqrestore(&ept->lock, irq_flags); 
         return -ENOENT; 
@@ -509,19 +529,19 @@ int kvx_get_mapping(struct ept_context *ept, uint64_t gpa, uint64_t *hpa)
     pt = (ept_pt_t *)phys_to_virt(
         pd->entries[pd_idx] & EPT_ADDR_MASK); 
 
-    pt_idx = EPT_OT_INDEX(gpa); 
+    pt_idx = EPT_PT_INDEX(gpa); 
 
     leaf_entry = pt->entries[pt_idx]; 
 
-    if(!(leaf_entry & EPT_READ_ACCESS))
+    if(!(leaf_entry & EPT_ACCESS_READ))
     {
         spin_unlock_irqrestore(&ept->lock, irq_flags); 
         return -ENOENT; 
     }
 
     /*extract host physical address*/ 
-    *hpa = (leaf_entry * EPT_ADDR_MASK) |
-        EPT_PAGE_OFFSET; 
+    *hpa = (leaf_entry & EPT_ADDR_MASK) |
+        EPT_PAGE_OFFSET(gpa); 
 
     spin_unlock_irqrestore(&ept->lock, irq_flags); 
 
@@ -561,7 +581,7 @@ void kvx_ept_dump_tables(struct ept_context *ept)
     
     for (pml4_idx = 0; pml4_idx < EPT_ENTRIES_PER_TABLE; pml4_idx++) 
     {
-        if (!(ept->pml4->entries[pml4_idx] & EPT_READ_ACCESS))
+        if (!(ept->pml4->entries[pml4_idx] & EPT_ACCESS_READ))
             continue;
         
         pdpt = (ept_pdpt_t *)phys_to_virt(
@@ -569,7 +589,7 @@ void kvx_ept_dump_tables(struct ept_context *ept)
         
         for (pdpt_idx = 0; pdpt_idx < EPT_ENTRIES_PER_TABLE; pdpt_idx++) 
         {
-            if (!(pdpt->entries[pdpt_idx] & EPT_READ_ACCESS))
+            if (!(pdpt->entries[pdpt_idx] & EPT_ACCESS_READ))
                 continue;
             
             pd = (ept_pd_t *)phys_to_virt(
@@ -577,7 +597,7 @@ void kvx_ept_dump_tables(struct ept_context *ept)
             
             for (pd_idx = 0; pd_idx < EPT_ENTRIES_PER_TABLE; pd_idx++)
             {
-                if (!(pd->entries[pd_idx] & EPT_READ_ACCESS))
+                if (!(pd->entries[pd_idx] & EPT_ACCESS_READ))
                     continue;
                 
                 pt = (ept_pt_t *)phys_to_virt(
@@ -587,7 +607,7 @@ void kvx_ept_dump_tables(struct ept_context *ept)
                 {
                     ept_entry_t entry = pt->entries[pt_idx];
                     
-                    if (!(entry & EPT_READ_ACCESS))
+                    if (!(entry & EPT_ACCESS_READ))
                         continue;
                     
                     uint64_t gpa = ((uint64_t)pml4_idx << 39) |
@@ -596,9 +616,9 @@ void kvx_ept_dump_tables(struct ept_context *ept)
                                    ((uint64_t)pt_idx << 12);
                     uint64_t hpa = entry & EPT_ADDR_MASK;
                     char perms[4] = {
-                        (entry & EPT_READ_ACCESS) ? 'R' : '-',
-                        (entry & EPT_WRITE_ACCESS) ? 'W' : '-',
-                        (entry & EPT_EXEC_ACCESS) ? 'X' : '-',
+                        (entry & EPT_ACCESS_READ) ? 'R' : '-',
+                        (entry & EPT_ACCESS_WRITE) ? 'W' : '-',
+                        (entry & EPT_ACCESS_EXEC) ? 'X' : '-',
                         '\0'
                     };
                     

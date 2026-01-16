@@ -40,9 +40,9 @@ struct guest_regs {
 enum vcpu_state {
     VCPU_STATE_UNINITIALIZED, 
     VCPU_STATE_INITIALIZED, 
-    VCPU_STATE_RUNNNING, 
+    VCPU_STATE_RUNNING, 
     VCPU_STATE_HALTED, 
-    VCPU_STATE_BLOCKED, 
+    VCPU_STATE_STOPPED, 
     VCPU_STATE_SHUTDOWN, 
     VCPU_STATE_ERROR
 }; 
@@ -111,7 +111,7 @@ struct vcpu {
     uint64_t exit_reason;
     uint64_t exit_qualification;
 
-    vcpu_stats stats; 
+    struct vcpu_stats stats; 
 
 };
 
@@ -131,9 +131,6 @@ struct vcpu *kvx_vcpu_alloc_init(struct kvx_vm *vm, int vcpu_id);
 int kvx_vcpu_pin_to_cpu(struct vcpu *vcpu, int target_cpu_id);
 void kvx_vcpu_unpin_and_stop(struct vcpu *vcpu);
 void kvx_free_vcpu(struct vcpu *vcpu);
-int kvx_init_vmcs_state(struct vcpu *vcpu); 
-int kvx_vcpu_setup_ept(struct vcpu *vcpu); 
-int kvx_vcpu_map_guest_memory(struct vcpu *vcpu, uint64_t guest_ram_size); 
-int kvx_vcpu_handle_ept_violation(struct vcpu *vcpu); 
-int kvx_vcpu_handle_ept_misconfiguration(struct vcpu *vcpu); 
+int kvx_init_vmcs_state(struct vcpu *vcpu);
+void kvx_dump_vcpu(struct vcpu *vcpu); 
 #endif /* VMX_H */

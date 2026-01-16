@@ -99,8 +99,6 @@
 #define HOST_STACK_ORDER                2 
 #define GUEST_STACK_SIZE                64 
 
-unsigned long guest_stack[GUEST_STACK_SIZE];
-
 struct desc64 {
 	uint16_t limit0;
 	uint16_t base0;
@@ -110,12 +108,6 @@ struct desc64 {
 	uint32_t zero1;
 } __attribute__((packed));
 
-static void guest_code(void)
-{
-   __asm__ __volatile__ (
-        "vmcall"
-    );
-}
 static inline uint16_t get_es1(void)
 {
 	uint16_t es;

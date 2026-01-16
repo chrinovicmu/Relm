@@ -50,6 +50,35 @@ static inline bool kvx_vcpu_io_bitmap_enabled(struct vcpu *vcpu);
 static inline bool kvx_vcpu_msr_bitmap_enabled(struct vcpu *vcpu);
 static inline unsigned int msr_area_order(size_t bytes);
 
+
+const uint32_t kvx_vmexit_msr_indices[] = {
+    MSR_IA32_EFER,
+    MSR_IA32_STAR,
+    MSR_IA32_LSTAR,
+    MSR_IA32_CSTAR,
+    MSR_IA32_FMASK,
+    MSR_IA32_FS_BASE,
+    MSR_IA32_GS_BASE
+};
+
+#define KVX_VMEXIT_MSR_COUNT \ 
+    ARRAY_SIZE(kvx_vmexit_msr_indices)
+
+const uint32_t kvx_vmentry_msr_indices[] = {
+    MSR_IA32_EFER,
+    MSR_IA32_STAR,
+    MSR_IA32_LSTAR,
+    MSR_IA32_CSTAR,
+    MSR_IA32_FMASK,
+    MSR_IA32_FS_BASE,
+    MSR_IA32_GS_BASE
+};
+
+#define KVX_VMENTRY_MSR_COUNT \
+    ARRAY_SIZE(kvx_vmentry_msr_indices)
+
+uint64_t kvx_vmentry_msr_values[KVX_VMENTRY_MSR_COUNT]; 
+
 bool kvx_vmx_support(void) 
 {
     unsigned int ecx; 
@@ -707,7 +736,7 @@ static void kvx_init_exec_controls(struct vcpu *vcpu)
         VMCS_PROC2_UNRESTRICTED_GUEST |
         VMCS_PROC2_ENABLE_VMFUNC; 
 
-    if(cpu_has_vpid())
+    if(_cpu_has_vpid())
         controls->secondary_proc = 
             controls->secondary_proc | VMCS_PROC2_VPID; 
 
@@ -848,7 +877,7 @@ struct vcpu *kvx_vcpu_alloc_init(struct kvx_vm *vm, int vpid)
         goto _out_free_vmcs;  
     }
 
-    if(cpu_has_vpid())
+    if(_cpu_has_vpid())
     {
         uint64_t vpid = vcpu->vpid; 
         CHECK_VMWRITE(VMCS_VPID, vpid); 
@@ -960,11 +989,6 @@ void kvx_free_vcpu(struct vcpu *vcpu)
     kvx_free_msr_bitmap(vcpu);
     kvx_free_vmcs_region(vcpu);
     kvx_destroy_host_cpu(vcpu->hcpu); 
-    if(vcpu->ept)
-    {
-        kvx_ept_context_destroy(vcpu->ept); 
-        vcpu->ept = NULL; 
-    }
     kfree(vcpu);
 }
 
@@ -1131,7 +1155,8 @@ void kvx_dump_vcpu(struct vcpu *vcpu)
             (unsigned long)(__vmread(GUEST_SYSENTER_ESP) & 0xFFFFFFFF), 
             (unsigned long)__vmread(GUEST_SYSENTER_CS), 
             (unsigned long)(__vmread(GUEST_SYSENTER_EIP) & 0xFFFFFFFF)); 
-    
+
+    /*
    
     pr_info("\n*** Host State ***\n\n");
 
@@ -1180,5 +1205,6 @@ void kvx_dump_vcpu(struct vcpu *vcpu)
         pr_info("PerfGlobalCtrl=0x%016llx\n",
             __vmread(HOST_PERF_GLOBAL_CTRL));
     }
+    */ 
  
 }

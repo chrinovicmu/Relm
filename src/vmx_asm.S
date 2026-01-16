@@ -120,8 +120,3 @@ kvx_vmexit_handler:
 
     vmresume
 
-vmx_error:
-    pop %rdi
-    pop %rbp 
-    mov $-1, %rax 
-    ret 

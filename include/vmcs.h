@@ -2,23 +2,17 @@
 #define VMCS_H
 
 #include <linux/const.h>
-#include "linux/kern_levels.h"
+#include <linux/kern_levels.h>
+#include <asm/msr-index.h>
+#include <asm/processor-flags.h>
 #include "vmcs_state.h"
 
-#define X86_CR4_VMXE_BIT    13 
-#define X86_CR4_VMXE        _BITUL(X86_CR4_VMXE_BIT)
-#define MSR_IA32_VMX_MISC       0x00000485
+#define X86_CR4_VMXE_BIT    13
+
 #define VMCS_INSTRUCTION_ERROR_FIELD        0x00004400
-/*enablling vmx through IA32_FEATURE_CONTROL_MSR */ 
 #define IA32_FEATURE_CONTROL_LOCKED     (   1 << 0)
 #define IA32_FEATURE_CONTROL_MSR_VMXON_ENABLE_OUTSIDE_SMX (1 << 2)
 #define MSR_IA32_FEATURE_CONTROL            0x0000003A 
-
-
-#define MSR_IA32_VMX_CR0_FIXED0             0x00000486 
-#define MSR_IA32_VMX_CR0_FIXED1             0x00000487 
-#define MSR_IA32_VMX_CR4_FIXED0             0x00000488 
-#define MSR_IA32_VMX_CR4_FIXED1             0x00000489 
 
 #define VMXON_REGION_PAGE_SIZE              4096 
 #define VMCS_REGION_PAGE_SIZE               4096
@@ -26,14 +20,6 @@
 /*------------- vm-execution control field ---------------*/ 
 
 /*VMCS control field MSRs */ 
-
-#define MSR_IA32_VMX_BASIC                  0x00000480 
-#define MSR_IA32_VMX_PINBASED_CTLS          0x00000481 
-#define MSR_IA32_VMX_PROCBASED_CTLS         0x00000482
-#define MSR_IA32_VMX_EXIT_CTLS              0x00000483 
-#define MSR_IA32_VMX_ENTRY_CTLS             0x00000484 
-#define MSR_IA32_VMX_PROCBASED_CTLS2        0x0000048B
-#define MSR_IA32_VMX_EPT_VPID_CAP           0x0000048C //EPT & VPID capabilities 
 /*control field encodings  */  
 
 #define VMCS_PIN_BASED_EXEC_CONTROLS                0x00004000 
@@ -115,18 +101,6 @@
 #define VMCS_IO_BITMAP_PAGES_ORDER           1 
 #define VMCS_IO_BITMAP_SIZE                  (VMCS_IO_BITMAP_PAGE_SIZE << VMCS_IO_BITMAP_PAGES_ORDER)
 
-/* CR0 bits */
-#define X86_CR0_PE                          0x00000001 /* Protected Mode */
-#define X86_CR0_NE                          0x00000020 /* Numeric Error */
-#define X86_CR0_NW                          0x20000000 /* Not Write-through */
-#define X86_CR0_CD                          0x40000000 /* Cache Disable */
-#define X86_CR0_PG                          0x80000000 /* Paging */
-
-/* CR4 bits */
-#define X86_CR4_PSE                         0x00000010 /* Page Size Extensions */
-#define X86_CR4_PAE                         0x00000020 /* Physical Address Extension */
-#define X86_CR4_VMXE                        0x00002000 /* VMX Enable */ 
-
 #define GUEST_CR0                           0x00006800
 #define GUEST_CR3                           0x00006802
 #define GUEST_CR4                           0x00006804
@@ -179,7 +153,7 @@
 struct vmcs_region{
     u32 revision_id;
     u32 abort;
-    char data[0]
+    char data[0];
 }__aligned(PAGE_SIZE); 
 
 struct vmxon_region{
@@ -203,32 +177,10 @@ struct msr_entry
     uint64_t value; 
 }__attribute__ ((packed, aligned(16))); 
 
-const uint32_t kvx_vmexit_msr_indices[] = {
-    MSR_IA32_EFER,
-    MSR_IA32_STAR,
-    MSR_IA32_LSTAR,
-    MSR_IA32_CSTAR,
-    MSR_IA32_FMASK,
-    MSR_IA32_FS_BASE,
-    MSR_IA32_GS_BASE
-};
+extern const uint32_t kvx_vmexit_msr_indices[];
+extern const uint32_t kvx_vmentry_msr_indices[];
+extern uint64_t kvx_vmentry_msr_values[];
 
-#define KVX_VMEXIT_MSR_COUNT \ 
-    ARRAY_SIZE(kvx_vmexit_msr_indices)
-
-const uint32_t kvx_vmentry_msr_indices[] = {
-    MSR_IA32_EFER,
-    MSR_IA32_STAR,
-    MSR_IA32_LSTAR,
-    MSR_IA32_CSTAR,
-    MSR_IA32_FMASK,
-    MSR_IA32_FS_BASE,
-    MSR_IA32_GS_BASE
-};
-
-#define KVX_VMENTRY_MSR_COUNT \
-    ARRAY_SIZE(kvx_vmentry_msr_indices)
-
-uint64_t kvx_vmentry_msr_values[KVX_VMENTRY_MSR_COUNT]; 
-
+#define KVX_VMEXIT_MSR_COUNT 7
+#define KVX_VMENTRY_MSR_COUNT 7
 #endif 
