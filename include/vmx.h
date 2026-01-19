@@ -30,12 +30,33 @@ struct vcpu_stats
 }; 
 /* Guest registers */
 struct guest_regs {
-    unsigned long rax, rbx, rcx, rdx;
-    unsigned long r8, r9, r10, r11, r12, r13, r14, r15;
-    unsigned long rip, rsp;
+
+    unsigned long rax;
+    unsigned long rbx;
+    unsigned long rcx;
+    unsigned long rdx;
+    unsigned long rsi;    
+    unsigned long rdi;    
+    unsigned long rbp;    
+    unsigned long rsp;
+    
+    unsigned long r8;
+    unsigned long r9;
+    unsigned long r10;
+    unsigned long r11;
+    unsigned long r12;
+    unsigned long r13;
+    unsigned long r14;
+    unsigned long r15;
+
+    unsigned long rip;
     unsigned long rflags;
+
     unsigned long cs, ds, es, fs, gs, ss;
-}__attribute__((packed));
+
+    unsigned long fs_base;
+    unsigned long gs_base;
+} __attribute__((packed));
 
 enum vcpu_state {
     VCPU_STATE_UNINITIALIZED, 

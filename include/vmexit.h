@@ -1,12 +1,17 @@
 #ifndef VMEXIT_H
 #define VMEXIT_H
 
-#include "vm.h"
-#include "vmcs_state.h"
-#include "vmx.h"
-#include "vmx_ops.h"
+#include <vm.h> 
+#include <vmcs_state.h>
+#include <vmx.h>
+#include <vmx_ops.h>
+#include <utils.h> 
 
-#define VM_EXIT_REASON 0x00004402
+#define VM_EXIT_REASON                          0x00004402
+#define VM_EXIT_QUALIFICATION                   0x00006400
+#define VM_EXIT_INSTRUCTION_LEN                 0x0000440c
+#define VM_EXIT_INTR_INFO	                    0x00004404
+#define VM_EXIT_INTR_ERROR_CODE             	0x00004406
 
 #define EXIT_REASON_EXCEPTION_NMI               0x00000000
 #define EXIT_REASON_EXTERNAL_INTERRUPT          0x00000001
@@ -115,7 +120,7 @@ static int handle_vmexit(struct stack_guest_gprs *guest_gprs)
         return 0;
     }
 
-    exit_qualification = __vmread(EXIT_QUALIFICATION);
+    exit_qualification = __vmread(VM_EXIT_QUALIFICATION);
     guest_rip = __vmread(GUEST_RIP);
     guest_rsp = __vmread(GUEST_RSP);
 
@@ -194,7 +199,7 @@ static int handle_vmexit(struct stack_guest_gprs *guest_gprs)
             vcpu->state = VCPU_STATE_HALTED;
 
             instr_len = __vmread(VM_EXIT_INSTRUCTION_LEN);
-            __vmwrite(GUEST_RIP, guest_rip + instr_len);
+            _vmwrite(GUEST_RIP, guest_rip + instr_len);
 
             /* stop execution on HLT */
             return 0;
@@ -225,7 +230,7 @@ static int handle_vmexit(struct stack_guest_gprs *guest_gprs)
             vcpu->regs.rdx = edx;
 
             instr_len = __vmread(VM_EXIT_INSTRUCTION_LEN);
-            __vmwrite(GUEST_RIP, guest_rip + instr_len);
+            _vmwrite(GUEST_RIP, guest_rip + instr_len);
 
             return 1;
         }
@@ -248,7 +253,7 @@ static int handle_vmexit(struct stack_guest_gprs *guest_gprs)
             /*TODO: emulate device or forward to userspace
              * emulate as NOP for now*/
             instr_len = __vmread(VM_EXIT_INSTRUCTION_LEN);
-            __vmwrite(GUEST_RIP, guest_rip + instr_len);
+            _vmwrite(GUEST_RIP, guest_rip + instr_len);
 
             return 1;
         }
@@ -261,7 +266,7 @@ static int handle_vmexit(struct stack_guest_gprs *guest_gprs)
             /*TODO: implement hypercall
             * advance RIP for now*/
             instr_len = __vmread(VM_EXIT_INSTRUCTION_LEN);
-            __vmwrite(GUEST_RIP, guest_rip + instr_len);
+            _vmwrite(GUEST_RIP, guest_rip + instr_len);
             return 1;
 
         case EXIT_REASON_MSR_READ:
@@ -278,7 +283,7 @@ static int handle_vmexit(struct stack_guest_gprs *guest_gprs)
             vcpu->regs.rdx = 0;
 
             instr_len = __vmread(VM_EXIT_INSTRUCTION_LEN);
-            __vmwrite(GUEST_RIP, guest_rip + instr_len);
+            _vmwrite(GUEST_RIP, guest_rip + instr_len);
             return 1;
         }
 
@@ -293,7 +298,7 @@ static int handle_vmexit(struct stack_guest_gprs *guest_gprs)
             /*TODO: emulate MSR write
              * advance RIP for now*/
             instr_len = __vmread(VM_EXIT_INSTRUCTION_LEN);
-            __vmwrite(GUEST_RIP, guest_rip + instr_len);
+            _vmwrite(GUEST_RIP, guest_rip + instr_len);
 
             return 1;
         }

@@ -1,4 +1,3 @@
-#include <cerrno>
 #include <linux/kthread.h>
 #include <linux/sched.h>
 #include <linux/smp.h>
@@ -7,9 +6,6 @@
 #include <linux/mm.h>        
 #include <linux/page-flags.h>
 #include <linux/highmem.h>   
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
 #include <vmx.h>
 #include <vm.h>
 #include <ept.h>
@@ -357,15 +353,19 @@ int relm_vm_copy_to_guest(struct relm_vm *vm, uint64_t gpa,
 
     while(copied < size)
     {
-        region = vm->mem_regions; 
-        while(region)
+        if(!region || current_gpa < region->gpa_start || 
+            current_gpa >= (region->gpa_start + region->size))
         {
-            /*check if current_gpa falls into this region's address space range */ 
-            if(current_gpa >= region->gpa_start && 
-               current_gpa < (region->gpa_start + region->size)){
-                break; 
+            region = vm->mem_regions; 
+            while(region)
+            {
+                /*check if current_gpa falls into this region's address space range */ 
+                if(current_gpa >= region->gpa_start &&
+                    current_gpa < (region->gpa_start + region->size)){
+                    break; 
+                }
+                region = region->next; 
             }
-            region = region->next; 
         }
 
         if(!region)
@@ -427,7 +427,7 @@ int relm_vm_copy_to_guest(struct relm_vm *vm, uint64_t gpa,
 
         flush_dcache_page(page); 
 
-        kunmap_local_page(page_va); 
+        kunmap_local(page_va); 
 
         copied += bytes_to_copy; 
         current_gpa += bytes_to_copy; 
@@ -439,19 +439,19 @@ int relm_vm_copy_to_guest(struct relm_vm *vm, uint64_t gpa,
 
     pr_info("RELM: Successfully copied %zu bytes to guest memory\n",
             copied);
-    return copied; 
+    return (int)copied; 
 }
 
 /*copy data from guest phsyical memory to host */ 
-int relm_vm_copy_from_guest(struct relm_vm *vm, void *data,
-                           uint64_t gpa, size_t size)
+int relm_vm_copy_from_guest(struct relm_vm *vm, const uint64_t gpa,
+                            const void *data, size_t size)
 {
     struct guest_mem_region *region; 
     uint64_t region_offset; 
     uint64_t page_index; 
     uint64_t page_offset; 
     uint64_t bytes_to_copy; 
-    uint64_t *dst(uint8_t*)data; 
+    uint8_t *dst = (uint8_t*)data; 
     uint8_t *page_va; 
     size_t copied = 0; 
     uint64_t current_gpa; 
@@ -470,14 +470,18 @@ int relm_vm_copy_from_guest(struct relm_vm *vm, void *data,
 
     while(copied < size)
     {
-        region = vm->mem_regions; 
-        while(region)
-        {
+        if(!region || current_gpa < region->gpa_start || 
+            current_gpa >= (region->gpa_start + region->size)){
+        
+            region = vm->mem_regions; 
+            while(region)
+            {
             if(current_gpa >= region->gpa_start &&
                current_gpa < (region->gpa_start + region->size)){
                 break;
-            }
+                }
             region = region->next; 
+            }
         }
 
         if(!region)
@@ -515,9 +519,11 @@ int relm_vm_copy_from_guest(struct relm_vm *vm, void *data,
 
         memcpy(dst + copied, page_va + page_offset, bytes_to_copy);
 
+        /*flushing might be unnnecesay here 
         flush_dcache_page(page); 
+        */ 
 
-        kunmap_local_page(page); 
+        kunmap_local(page_va); 
 
         copied += bytes_to_copy; 
         current_gpa += bytes_to_copy; 
@@ -526,7 +532,8 @@ int relm_vm_copy_from_guest(struct relm_vm *vm, void *data,
     pr_info("RELM: Successfully copied %zu bytes from guest memory\n", 
             copied);
 
-    return copied;
+    return (int)copied;
+
 }
 
 /*zero out a range og guest memory */ 
@@ -550,15 +557,19 @@ int relm_vm_zero_guest_memory(struct relm_vm *vm, uint64_t gpa, size_t size)
 
     while (zeroed < size) 
     {
-        region = vm->mem_regions;
-        while (region) 
+        if(!region || current_gpa < region->gpa_start || 
+            current_gpa >= (region->gpa_start, region->size))
         {
-            if (current_gpa >= region->gpa_start &&
-                current_gpa < (region->gpa_start + region->size)) {
-                break;
-            }
+            region = vm->mem_regions;
+            while (region) 
+            {
+                if (current_gpa >= region->gpa_start &&
+                    current_gpa < (region->gpa_start + region->size)) {
+                    break;
+                }
 
-            region = region->next;
+                region = region->next;
+            }
         }
 
         if (!region) {
@@ -586,15 +597,18 @@ int relm_vm_zero_guest_memory(struct relm_vm *vm, uint64_t gpa, size_t size)
 
         memset(page_va + page_offset, 0, bytes_to_zero);
 
-        flush_dcache_page(page)
+        /*mark page as dirty*/ 
+        set_page_dirty(page); 
 
-        kunmap_local_page(page);
+        flush_dcache_page(page);
+
+        kunmap_local(page_va);
 
         zeroed += bytes_to_zero;
         current_gpa += bytes_to_zero;
     }
 
-    return zeroed;
+    return (int)zeroed;
 }
 
 /**

@@ -1156,6 +1156,7 @@ void relm_dump_vcpu(struct vcpu *vcpu)
             (unsigned long)__vmread(GUEST_SYSENTER_CS), 
             (unsigned long)(__vmread(GUEST_SYSENTER_EIP) & 0xFFFFFFFF)); 
 
+    /*
    
     pr_info("\n*** Host State ***\n\n");
 

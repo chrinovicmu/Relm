@@ -96,6 +96,7 @@
 #define GUEST_INTR_STATUS				0x00000810
 #define GUEST_PML_INDEX					0x00000812
 
+#define GUEST_PHYSICAL_ADDRESS          0x00002400
 #define HOST_STACK_ORDER                2 
 #define GUEST_STACK_SIZE                64 
 

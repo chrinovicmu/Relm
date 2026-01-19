@@ -11,6 +11,8 @@
 #include <vm.h> 
 #include <ept.h>
 #include <vmx_ops.h>
+#include <vmexit.h>
+#include <vmcs_state.h> 
 #include <utils.h> 
 
 static inline void _invept(uint64_t type, uint64_t eptp)
@@ -20,7 +22,7 @@ static inline void _invept(uint64_t type, uint64_t eptp)
         uint64_t reserved; 
     }__attribute__((packed)) descriptor = {
         .eptp = eptp, 
-        .reserved = 0; 
+        .reserved = 0,  
     }; 
 
     __asm__ __volatile__ (
@@ -92,15 +94,15 @@ int relm_setup_ept(struct relm_vm *vm)
     if(IS_ERR(vm->ept))
     {
         int err = PTR_ERR(vm->ept); 
-        vcpu->ept = NULL; 
+        vm->ept = NULL; 
         pr_err("RELM: Failed to create EPT context: %d\n"); 
         return err; 
     }
 
-    CHECK_VMWRITE(EPT_POINTER, vcpu->ept->eptp); 
+    CHECK_VMWRITE(EPT_POINTER, vm->ept->eptp); 
 
     pr_info("RELM: EPT setup complete for VM %d (EPTP=0x%llx)\n", 
-            vm->vm_id, vcpu->ept->eptp); 
+            vm->vm_id, vm->ept->eptp); 
 
     return 0; 
 }
@@ -117,7 +119,7 @@ int relm_handle_ept_violation(struct relm_vm *vm)
     bool instr_fetch;
     bool ept_present; 
 
-    exit_qualification = __vmread(EXIT_QUALIFICATION); 
+    exit_qualification = __vmread(VM_EXIT_QUALIFICATION); 
     gpa = __vmread(GUEST_PHYSICAL_ADDRESS); 
 
     data_read = exit_qualification & (1ULL << 0);
@@ -298,7 +300,7 @@ int relm_ept_map_page(struct ept_context *ept, uint64_t gpa,
     /*ensure addresses are page-aligned */ 
     if((gpa & 0xFFF) || (hpa & 0xFFF))
     {
-        pr_err("RELM: Addresses must be 4KB aligned (GPA=0x%llx, HPA=0x%llx)\n". 
+        pr_err("RELM: Addresses must be 4KB aligned (GPA=0x%llx, HPA=0x%llx)\n",
                gpa, hpa); 
         return -EINVAL; 
     }

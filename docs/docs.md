@@ -40,7 +40,9 @@ Relm implements a simplified memory model to ensure guest isolation:
 
 The hypervisor organizes guest memory as a linked list of regions:
 
-struct Relm_vm 
+```
+
+```struct Relm_vm 
     mem_regions
 
 mem_regions: #1 
@@ -59,4 +61,7 @@ mem_regions # 2
     pages(...) -> page 
     next NULL
 
-
+` 
+```
+```
+```

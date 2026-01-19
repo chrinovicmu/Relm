@@ -2,7 +2,10 @@
 #define EPT_H
 
 #include <linux/types.h>
-#include <vmx.h> 
+#include <vmx.h>
+#include <vm.h> 
+
+#define EPT_POINTER             0x0000201A
 
 #define EPT_LEVLS               4
 #define EPT_ENTRIES_PER_TABLE  512 
@@ -117,6 +120,7 @@ struct ept_context
 }; 
 
 bool relm_ept_check_support(void); 
+int relm_setup_ept(struct relm_vm *vm); 
 struct ept_context *relm_ept_context_create(void); 
 void relm_ept_context_destroy(struct ept_context *ept); 
 

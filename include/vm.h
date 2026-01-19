@@ -77,7 +77,7 @@ int relm_vm_map_mmio_region(struct relm_vm *vm, uint64_t gpa, uint64_t hpa, uint
 void relm_vm_free_guest_memory(struct relm_vm *vm); 
 int relm_vm_copy_to_guest(struct relm_vm *vm, uint64_t gpa, const void *data, size_t size);
 int relm_vm_copy_from_guest(struct relm_vm *vm, uint64_t gpa, const void *data, size_t size);
-int relm_vm_zero_guest_memory(struct relm_vm *vm, uint64_t gpa, size_t size)
+int relm_vm_zero_guest_memory(struct relm_vm *vm, uint64_t gpa, size_t size); 
 int relm_run_vm(struct relm_vm *vm);
 int relm_stop_vm(struct relm_vm *vm);
 
