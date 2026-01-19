@@ -529,6 +529,73 @@ int relm_vm_copy_from_guest(struct relm_vm *vm, void *data,
     return copied;
 }
 
+/*zero out a range og guest memory */ 
+int relm_vm_zero_guest_memory(struct relm_vm *vm, uint64_t gpa, size_t size)
+{
+    struct guest_mem_region *region;
+    uint64_t region_offset;
+    uint64_t page_index;
+    uint64_t page_offset;
+    uint64_t bytes_to_zero;
+    uint8_t *page_va;
+    size_t zeroed = 0;
+    uint64_t current_gpa;
+    struct page *page;
+
+    if (!vm || size == 0) {
+        return -EINVAL;
+    }
+
+    current_gpa = gpa;
+
+    while (zeroed < size) 
+    {
+        region = vm->mem_regions;
+        while (region) 
+        {
+            if (current_gpa >= region->gpa_start &&
+                current_gpa < (region->gpa_start + region->size)) {
+                break;
+            }
+
+            region = region->next;
+        }
+
+        if (!region) {
+            return zeroed > 0 ? zeroed : -EFAULT;
+        }
+
+        region_offset = current_gpa - region->gpa_start;
+        page_index = region_offset / PAGE_SIZE;
+        page_offset = region_offset % PAGE_SIZE;
+
+        bytes_to_zero = PAGE_SIZE - page_offset;
+        if (bytes_to_zero > (size - zeroed)) {
+            bytes_to_zero = size - zeroed;
+        }
+
+        page = region->pages[page_index];
+        if (!page) {
+            return zeroed > 0 ? zeroed : -EFAULT;
+        }
+
+        page_va = kmap_local_page(page);
+        if (!page_va) {
+            return zeroed > 0 ? zeroed : -ENOMEM;
+        }
+
+        memset(page_va + page_offset, 0, bytes_to_zero);
+
+        flush_dcache_page(page)
+
+        kunmap_local_page(page);
+
+        zeroed += bytes_to_zero;
+        current_gpa += bytes_to_zero;
+    }
+
+    return zeroed;
+}
 
 /**
  * relm_vm_add_vcpu - Creates and pins a VCPU to a specific host CPU.
