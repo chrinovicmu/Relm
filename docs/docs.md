@@ -34,3 +34,29 @@ Relm implements a simplified memory model to ensure guest isolation:
 * **Guest RAM**: Allocated as a contiguous block in the Host Virtual Address space using `vmalloc`.
 * **Stack Initialization**: The Guest `RSP` is automatically mapped to the top of the allocated RAM block, growing downwards toward the Guest `RIP` at address `0x0`.
 * **Instruction Interception**: Utilizing the Exception Bitmap, Relm traps specific events (like Page Faults or Invalid Opcodes) to maintain control over the execution environment.
+
+
+##VM Memory layout:
+
+The hypervisor organizes guest memory as a linked list of regions:
+
+struct Relm_vm 
+    mem_regions
+
+mem_regions: #1 
+    gpa_start: 0x0 
+    size: 2GB
+    pages(0) -> page
+    pages(1) ->  page 
+    pages(...) - > page 
+    next = mem_regions #2 
+
+mem_regions # 2 
+    gpa_start: 0xC00000000
+    size: 512MB
+    pages(0) -> page
+    pages(1) -> page 
+    pages(...) -> page 
+    next NULL
+
+

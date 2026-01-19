@@ -8,6 +8,7 @@
 #include <asm/msr.h>
 
 #include <vmx.h>
+#include <vm.h> 
 #include <ept.h>
 #include <vmx_ops.h>
 #include <utils.h> 

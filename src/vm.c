@@ -7,6 +7,7 @@
 #include <linux/mm.h>        
 #include <linux/page-flags.h>
 #include <linux/highmem.h>   
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 #include <vmx.h>
@@ -99,6 +100,7 @@ int relm_vm_allocate_guest_ram(struct relm_vm *vm, uint64_t size, uint64_t gpa_s
     if(!vm || !vm->ept)
         return -EINVAL;
 
+    /*align size to page boundary */ 
     size = PAGE_ALIGN(size);
     num_pages = size / PAGE_SIZE;
 
@@ -350,7 +352,8 @@ int relm_vm_copy_to_guest(struct relm_vm *vm, uint64_t gpa,
     
     current_gpa = gpa;
 
-    pr_info("RELM: Copying %zu bytes to guest at GPA 0x%llx\n", size, gpa);
+    pr_info("RELM: Copying %zu bytes to guest at GPA 0x%llx\n", 
+            size, gpa);
 
     while(copied < size)
     {
@@ -373,16 +376,25 @@ int relm_vm_copy_to_guest(struct relm_vm *vm, uint64_t gpa,
         }
 
         /*the offset within the region */ 
-        region_offset = current_gpa - region->start; 
+        region_offset = current_gpa - region->gpa_start;
+
         /*page within in region */ 
         page_index = region_offset / PAGE_SIZE; 
 
         page_offset = region_offset % PAGE_SIZE; 
 
-        bytes_to_copy = PAGE_SIZE = page_offset; 
+        /*page boundary 
+         * kmap_local_page only maps one 4KB page*/ 
+        bytes_to_copy = PAGE_SIZE - page_offset; 
+
+        /*total data boundary
+         * ensure we don't copy more that what remains in the source buffer*/ 
         if(bytes_to_copy > (size - copied)){
             bytes_to_copy = size - copied; 
         }
+
+        /*region boundary
+         * ensure we don't overflow the guest memory itself*/ 
         if(bytes_to_copy > (region->size - region_offset)){
             bytes_to_copy = region->size - region_offset; 
         }
@@ -405,9 +417,17 @@ int relm_vm_copy_to_guest(struct relm_vm *vm, uint64_t gpa,
         }
 
         /*perform actaul memory copy*/ 
-        memccpy(page_va + page_offset, src + copied, bytes_to_copy); 
+        memcpy(page_va + page_offset, src + copied, bytes_to_copy); 
 
-        kunmap(page); 
+        /*host maps guest-backed struct page and writes through 
+         * temoparay kernel VA. 
+         * these stores populate the CPU's D-cache and are not immediatley
+         * visible to guest memory consumers.
+         * flush data-cache to ensure DRAM visibility*/ 
+
+        flush_dcache_page(page); 
+
+        kunmap_local_page(page_va); 
 
         copied += bytes_to_copy; 
         current_gpa += bytes_to_copy; 
@@ -417,9 +437,98 @@ int relm_vm_copy_to_guest(struct relm_vm *vm, uint64_t gpa,
         }     
     }
 
-    pr_info("RELM: Successfully copied %zu bytes to guest memory\n", copied);
+    pr_info("RELM: Successfully copied %zu bytes to guest memory\n",
+            copied);
     return copied; 
 }
+
+/*copy data from guest phsyical memory to host */ 
+int relm_vm_copy_from_guest(struct relm_vm *vm, void *data,
+                           uint64_t gpa, size_t size)
+{
+    struct guest_mem_region *region; 
+    uint64_t region_offset; 
+    uint64_t page_index; 
+    uint64_t page_offset; 
+    uint64_t bytes_to_copy; 
+    uint64_t *dst(uint8_t*)data; 
+    uint8_t *page_va; 
+    size_t copied = 0; 
+    uint64_t current_gpa; 
+    struct page *page; 
+
+    if(!vm || !data || size == 0)
+    {
+        pr_err("RELM: Invalid parameters to copy_from_guest\n"); 
+        return -EINVAL; 
+    }
+
+    current_gpa = gpa; 
+
+    pr_info("RELM: Copying %zu bytes from guest at GPA 0x%llx\n",
+            size, gpa);
+
+    while(copied < size)
+    {
+        region = vm->mem_regions; 
+        while(region)
+        {
+            if(current_gpa >= region->gpa_start &&
+               current_gpa < (region->gpa_start + region->size)){
+                break;
+            }
+            region = region->next; 
+        }
+
+        if(!region)
+        {
+            pr_err("RELM: GPA 0x%llx not mapped in any guest memory region\n", 
+                   current_gpa); 
+            return copied > 0 ? copied : -EFAULT; 
+        }
+
+        region_offset = current_gpa - region->gpa_start; 
+        page_index = region_offset / PAGE_SIZE; 
+        page_offset = region_offset % PAGE_SIZE; 
+
+        bytes_to_copy = PAGE_SIZE - page_offset; 
+        if(bytes_to_copy > (size - copied)){
+            bytes_to_copy = size - copied; 
+        }
+        if(bytes_to_copy > (region->size - region_offset)){
+            bytes_to_copy = region->size - region_offset; 
+        }
+
+        page = region->pages[page_index]; 
+        if(!page)
+        {
+            pr_err("RELM: NULL page at index %llu\n", page_index); 
+            return copied > 0 ? copied : -EFAULT; 
+        }
+
+        page_va = kmap_local_page(page); 
+        if(!page_va)
+        {
+            pr_err("RELM: Failed to map guest paged\n"); 
+            return copied > 0 ? copied : -EFAULT; 
+        }
+
+        memcpy(dst + copied, page_va + page_offset, bytes_to_copy);
+
+        flush_dcache_page(page); 
+
+        kunmap_local_page(page); 
+
+        copied += bytes_to_copy; 
+        current_gpa += bytes_to_copy; 
+    }
+
+    pr_info("RELM: Successfully copied %zu bytes from guest memory\n", 
+            copied);
+
+    return copied;
+}
+
 
 /**
  * relm_vm_add_vcpu - Creates and pins a VCPU to a specific host CPU.
