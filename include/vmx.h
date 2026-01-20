@@ -87,7 +87,7 @@ struct vcpu {
 
     struct task_struct *host_task; 
 
-    uint8_t host_stack; 
+    void *host_stack; 
     uint64_t host_rsp; 
 
     struct vmcs_region *vmcs;
@@ -152,7 +152,10 @@ struct host_cpu
 struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vcpu_id);
 int relm_vcpu_pin_to_cpu(struct vcpu *vcpu, int target_cpu_id);
 void relm_vcpu_unpin_and_stop(struct vcpu *vcpu);
+int relm_vmclear(struct vcpu *vcpu); 
+int relm_vmptrld(struct vcpu *vcpu); 
 void relm_free_vcpu(struct vcpu *vcpu);
 int relm_init_vmcs_state(struct vcpu *vcpu);
 void relm_dump_vcpu(struct vcpu *vcpu); 
+
 #endif /* VMX_H */

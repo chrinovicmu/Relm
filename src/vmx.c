@@ -1,3 +1,4 @@
+#include <asm/processor-flags.h>
 #include <linux/slab.h>
 #include <linux/gfp.h>
 #include <linux/mm.h>
@@ -25,7 +26,7 @@ static int relm_setup_io_bitmap(struct vcpu *vcpu);
 static int relm_setup_msr_bitmap(struct vcpu *vcpu);
 static int relm_setup_msr_areas(struct vcpu *vcpu,
                                const uint32_t *vmexit_list,  size_t vmexit_count,
-                               const uint32_t *vmentry_list, const uint32_t *vmentry_values,
+                               const uint32_t *vmentry_list, const uint64_t *vmentry_values,
                                size_t vmentry_count);
 
 static int relm_vcpu_setup_msr_state(struct vcpu *vcpu);
@@ -42,7 +43,7 @@ static void relm_free_vmxon_region(struct host_cpu *hcpu);
 static struct msr_entry *alloc_msr_entry(size_t n_entries);
 static void free_msr_area(struct msr_entry *area, size_t n_entries);
 static void populate_msr_load_area(struct msr_entry *area, size_t count,
-                                   const uint32_t *indices, const uint32_t *values);
+                                   const uint32_t *indices, const uint64_t *values);
 static void populate_msr_store_area(struct msr_entry *area, size_t count, 
                                     const uint32_t *indices);
 
@@ -79,7 +80,7 @@ const uint32_t relm_vmentry_msr_indices[] = {
 
 uint64_t relm_vmentry_msr_values[RELM_VMENTRY_MSR_COUNT]; 
 
-bool relm_vmx_support(void) 
+inline bool relm_vmx_support(void) 
 {
     unsigned int ecx; 
 
@@ -201,41 +202,7 @@ static inline bool relm_vcpu_ept_enabled(struct vcpu *vcpu)
 void relm_vcpu_unpin_and_stop(struct vcpu *vcpu)
 {
     set_cpus_allowed_ptr(vcpu->host_task, cpu_online_mask); 
-
     kthread_stop(vcpu->host_task); 
-}
-
-static struct host_cpu * relm_host_cpu_create(int logical_cpu_id)
-{
-    struct host_cpu * hcpu; 
-
-    hcpu = kmalloc(sizeof(*hcpu), GFP_KERNEL); 
-    if(!hcpu)
-        return ERR_PTR(-ENOMEM); 
-
-    hcpu->logical_cpu_id = logical_cpu_id; 
-
-    if(relm_setup_vmxon_region(hcpu) != 0)
-    {
-        pr_err("failed to setup vmxon region on host cpu : %d\n", 
-               hcpu->logical_cpu_id); 
-
-        hcpu->logical_cpu_id = -1; 
-        kfree(hcpu); 
-        return NULL; 
-    }
-
-    return hcpu; 
-}
-
-static void relm_destroy_host_cpu(struct host_cpu *hcpu)
-{
-    if(hcpu)
-    {
-        relm_free_vmxon_region(hcpu); 
-        kfree(hcpu); 
-        hcpu = NULL; 
-    }
 }
 
 static int relm_setup_vmxon_region(struct host_cpu *hcpu)
@@ -252,9 +219,71 @@ static int relm_setup_vmxon_region(struct host_cpu *hcpu)
     *(uint32_t *)hcpu->vmxon = _vmcs_revision_id(); 
     hcpu->vmxon_pa = virt_to_phys(hcpu->vmxon); 
 
-    PDEBUG("VMXON region physicall address : 0x%llx\n", hcpu->vmxon_pa); 
+    PDEBUG("VMXON region physicall address : 0x%llx\n", hcpu->vmxon_pa);     
     return 0; 
+}
 
+static int relm_vmxon(struct host_cpu *hcpu)
+{
+    uint64_t rflags; 
+
+    if(!hcpu || !hcpu->vmxon_pa)
+    {
+        pr_err("RELM: Invalid vmxon region\n"); 
+        return -EINVAL; 
+    }
+
+    asm volatile (
+        "vmxon %[pa]\n\t"           
+        "pushfq\n\t"                
+        "popq %[rflags]\n\t"        
+        : [rflags] "=r" (rflags)    
+        : [pa] "m" (hcpu->vmxon_pa) 
+        : "cc", "memory"            
+    );
+
+    if(rflags & X86_EFLAGS_CF)
+    {
+        pr_err("RELM: VMXON failed - VMfailInvalid (CF=1)\n"); 
+        return -EIO; 
+    }
+    if(rflags & X86_EFLAGS_ZF)
+    {   
+        pr_err("RELM: VMXON failed - VMfailValid (ZF=1)\n"); 
+        return -EIO; 
+    }
+    
+    pr_info("RELM: VMXON successful, CPU in VMX root operation\n"); 
+    return 0; 
+}
+
+static int relm_vmxoff(struct host_cpu *hcpu)
+{
+    uint64_t rflags; 
+
+    asm volatile (
+        "vmxoff\n\t"
+        "pushfq\n\t"
+        "popq %[rflags]\n\t"
+        : [rflags] "=r" (rflags)
+        :
+        : "cc", "memory"
+    );
+
+     if (rflags & X86_EFLAGS_CF)
+    {
+        pr_err("RELM: VMXOFF failed - VMfailInvalid\n");
+        return -EIO;
+    }
+    if (rflags & X86_EFLAGS_ZF) 
+    {
+        pr_err("RELM: VMXOFF failed - VMfailValid\n");
+        return -EIO;
+    }
+    
+    pr_info("RELM: VMXOFF successful, CPU exited VMX operation\n");
+
+    return 0;
 }
 
 static int relm_setup_vmcs_region(struct vcpu *vcpu)
@@ -275,7 +304,127 @@ static int relm_setup_vmcs_region(struct vcpu *vcpu)
 
     pr_info("VMCS region alllocated, revision ID set, and loaded\n"); 
     return 0;
+}
 
+int relm_vmclear(struct vcpu *vcpu)
+{
+    uint64_t rflags; 
+    
+    if(!vcpu || !vcpu->vmcs_pa)
+    {
+        pr_err("RELM: Invalid VMCS region\n"); 
+        return -EINVAL; 
+    }
+
+    asm volatile (
+        "vmclear %[pa]\n\t"
+        "pushfq\n\t"
+        "popq %[rflags]\n\t"
+        : [rflags] "=r" (rflags)
+        : [pa] "m" (vcpu->vmcs_pa)
+        : "cc", "memory"
+    );
+
+    if (rflags & X86_EFLAGS_CF) 
+    {
+        pr_err("RELM: VMCLEAR failed - VMfailInvalid\n");
+        return -EIO;
+    }
+    if (rflags & X86_EFLAGS_ZF) 
+    {
+        pr_err("RELM: VMCLEAR failed - VMfailValid\n");
+        return -EIO;
+    }
+    
+    pr_info("RELM: VMCLEAR successful for VMCS at PA 0x%llx\n", vcpu->vmcs_pa);
+    return 0;
+}
+
+int relm_vmptrld(struct vcpu *vcpu)
+{
+    uint64_t rflags;
+    
+    if (!vcpu || !vcpu->vmcs_pa)
+    {
+        pr_err("RELM: Invalid VMCS region\n");
+        return -EINVAL;
+    }
+    
+    asm volatile (
+        "vmptrld %[pa]\n\t"
+        "pushfq\n\t"
+        "popq %[rflags]\n\t"
+        : [rflags] "=r" (rflags)
+        : [pa] "m" (vcpu->vmcs_pa)
+        : "cc", "memory"
+    );
+    
+    if (rflags & X86_EFLAGS_CF) 
+    {
+        pr_err("RELM: VMPTRLD failed - VMfailInvalid\n");
+        return -EIO;
+    }
+    if (rflags & X86_EFLAGS_ZF) 
+    {
+        pr_err("RELM: VMPTRLD failed - VMfailValid\n");
+        return -EIO;
+    }
+    
+    pr_info("RELM: VMPTRLD successful, VMCS at PA 0x%llx is now current\n", vcpu->vmcs_pa);
+    return 0;
+}
+static struct host_cpu * relm_host_cpu_create(int logical_cpu_id)
+{
+    struct host_cpu * hcpu;
+    int ret; 
+
+    hcpu = kmalloc(sizeof(*hcpu), GFP_KERNEL); 
+    if(!hcpu)
+        return ERR_PTR(-ENOMEM); 
+
+    hcpu->logical_cpu_id = logical_cpu_id; 
+
+    if(relm_setup_vmxon_region(hcpu) != 0)
+    {
+        pr_err("failed to setup vmxon region on host cpu : %d\n", 
+               hcpu->logical_cpu_id); 
+
+        hcpu->logical_cpu_id = -1; 
+        kfree(hcpu); 
+        return NULL; 
+    }
+
+    relm_enable_vmx_operation(); 
+
+    if(!relm_setup_feature_control())
+    {
+        pr_err("RELM: Failed to setup feature control MSR\n"); 
+        relm_free_vmxon_region(hcpu); 
+        kfree(hcpu); 
+        return NULL; 
+    }
+
+    ret = relm_vmxon(hcpu); 
+    if(ret != 0)
+    {
+        pr_err("RELM: VMXON failed on CPU %d", logical_cpu_id); 
+        relm_free_vmxon_region(hcpu); 
+        kfree(hcpu); 
+        return NULL; 
+    }
+
+    return hcpu; 
+}
+
+static void relm_destroy_host_cpu(struct host_cpu *hcpu)
+{
+    if(hcpu)
+    {
+        relm_vmxoff(hcpu); 
+        relm_free_vmxon_region(hcpu); 
+        kfree(hcpu); 
+        hcpu = NULL; 
+    }
 }
 
 static int relm_setup_cr_controls(struct vcpu *vcpu)
@@ -516,7 +665,7 @@ static void free_msr_area(struct msr_entry *area, size_t n_entries)
 
 /*populate msr-load are from parallel arrays */ 
 static void populate_msr_load_area(struct msr_entry *area, size_t count,
-                              const uint32_t *indices, const uint32_t *values)
+                              const uint32_t *indices, const uint64_t *values)
 {
     size_t i; 
     for(i = 0; i < count; ++i)
@@ -542,9 +691,9 @@ static void populate_msr_store_area(struct msr_entry *area, size_t count,
 
 }
 
-int relm_setup_msr_areas(struct vcpu *vcpu,
+static int relm_setup_msr_areas(struct vcpu *vcpu,
                     const uint32_t *vmexit_list,  size_t vmexit_count,
-                    const uint32_t *vmentry_list, const uint32_t *vmentry_values,
+                    const uint32_t *vmentry_list, const uint64_t *vmentry_values,
                     size_t vmentry_count)
 {
     int rc = 0;
@@ -597,10 +746,7 @@ int relm_setup_msr_areas(struct vcpu *vcpu,
     for (i = 0; i < vmentry_count; ++i) 
     {
         uint32_t idx = vmentry_list[i];
-        uint64_t val = 0;
-
-        /* Some MSRs may not be readable; policy decision required */
-        val = vmentry_values ? vmentry_values[i] : 0;
+        uint64_t val = vmentry_values ? vmentry_values[i] : 0;
 
         vcpu->vmexit_load_area[i].index    = idx;
         vcpu->vmexit_load_area[i].reserved = 0;
@@ -615,12 +761,12 @@ int relm_setup_msr_areas(struct vcpu *vcpu,
     vcpu->vmexit_count  = vmexit_count;
     vcpu->vmentry_count = vmentry_count;
 
-    if (_vmwrite(VM_EXIT_MSR_STORE_ADDR, vcpu->vmexit_store_pa) ||
-        _vmwrite(VM_EXIT_MSR_STORE_COUNT, (uint64_t)vmexit_count) ||
-        _vmwrite(VM_EXIT_MSR_LOAD_ADDR,   vcpu->vmexit_load_pa) ||
-        _vmwrite(VM_EXIT_MSR_LOAD_COUNT,  (uint64_t)vmentry_count) ||
-        _vmwrite(VM_ENTRY_MSR_LOAD_ADDR,  vcpu->vmentry_load_pa) ||
-        _vmwrite(VM_ENTRY_MSR_LOAD_COUNT, (uint64_t)vmentry_count)) 
+    if (_vmwrite(VMCS_EXIT_MSR_STORE_ADDR, vcpu->vmexit_store_pa) ||
+        _vmwrite(VMCS_EXIT_MSR_STORE_COUNT, (uint64_t)vmexit_count) ||
+        _vmwrite(VMCS_EXIT_MSR_LOAD_ADDR,   vcpu->vmexit_load_pa) ||
+        _vmwrite(VMCS_EXIT_MSR_LOAD_COUNT,  (uint64_t)vmentry_count) ||
+        _vmwrite(VMCS_ENTRY_MSR_LOAD_ADDR,  vcpu->vmentry_load_pa) ||
+        _vmwrite(VMCS_ENTRY_MSR_LOAD_COUNT, (uint64_t)vmentry_count)) 
     {
         rc = -EIO;
         goto _out_free_all;
@@ -699,13 +845,13 @@ static int relm_vcpu_setup_msr_state(struct vcpu *vcpu)
     vmentry_values[2] = 0;                  // Guest LSTAR
     vmentry_values[3] = 0;                  // Guest CSTAR
     vmentry_values[4] = 0;                  // Guest FMASK
-    vmentry_values[5] = vcpu->regs.fs;      // Guest FS_BASE
-    vmentry_values[6] = vcpu->regs.gs;      // Guest GS_BASE
+    vmentry_values[5] = vcpu->regs.fs_base;      // Guest FS_BASE
+    vmentry_values[6] = vcpu->regs.gs_base;      // Guest GS_BASE
     
 
     return relm_setup_msr_areas(vcpu, 
                                vcpu->msr_indices, vcpu->msr_count,
-                               vcpu->msr_indices, (uint32_t *)vmentry_values, 
+                               vcpu->msr_indices, vmentry_values, 
                                vcpu->msr_count); 
 }
 
@@ -865,15 +1011,29 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
         (uint64_t)vcpu->host_stack + (PAGE_SIZE << HOST_STACK_ORDER); 
 
     /* Allocate and setup VMCS region */
-
-    if (relm_setup_vmcs_region(vcpu) != 0) {
-        pr_err("Failed to setup VMCS region\n");
+    if (relm_setup_vmcs_region(vcpu) != 0)
+    {
+        pr_err("RELM: Failed to setup VMCS region\n");
         goto _out_free_host_stack; 
+    }
+
+    ret = relm_vmclear(vcpu); 
+    if(ret != 0)
+    {
+        pr_err("RELM: VMCLEAR failed\n"); 
+        goto _out_free_vmcs; 
+    }
+
+    ret = relm_vmptrld(vcpu);
+    if(ret != 0)
+    {
+        pr_err("RELM: VMPTRLD failed\n"); 
+        goto _out_free_vmcs; 
     }
 
     if(relm_setup_exec_controls(vcpu) != 0)
     {
-        pr_err("Failed to setup VMX execution controls\n"); 
+        pr_err("RELM: Failed to setup VMX execution controls\n"); 
         goto _out_free_vmcs;  
     }
 
@@ -969,7 +1129,7 @@ void relm_free_vmcs_region(struct vcpu *vcpu)
     }
 }
 
-void relm_free_vmxon_region(struct host_cpu *hcpu)
+static void relm_free_vmxon_region(struct host_cpu *hcpu)
 {
     if (hcpu->vmxon) 
     {
@@ -1100,7 +1260,7 @@ int relm_init_vmcs_state(struct vcpu *vcpu)
         pr_err("Host state setup faile : err %d\n", ret); 
         return -1; 
     }
-    if(ret = relm_setup_guest_state(vcpu) != 0)
+    if((ret = relm_setup_guest_state(vcpu)) != 0)
     {
         pr_err("Guest state setup failed : err %d\n", ret); 
         return -1; 

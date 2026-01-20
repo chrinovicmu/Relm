@@ -266,7 +266,7 @@ static void *relm_ept_get_or_create_table(ept_entry_t *entry_ptr, int level)
 
     if(entry & EPT_ACCESS_READ)
     {
-        table_pa = entry & EPT_ADDR_MASK; 
+        return phys_to_virt(entry & EPT_ADDR_MASK);  
     }
 
     table_va = relm_ept_alloc_table(); 
@@ -358,13 +358,14 @@ int relm_ept_map_page(struct ept_context *ept, uint64_t gpa,
         ept->stats.total_mapped += EPT_PAGE_SIZE_4KB; 
     }
     
-    *leaf_entry = (hpa & EPT_ADDR_MASK) | flags | EPTP_MEMTYPE_WB;
+    *leaf_entry = (hpa & EPT_ADDR_MASK) | flags | EPT_MEMTYPE_WB;
 
     spin_unlock_irqrestore(&ept->lock, irq_flags); 
 
     PDEBUG("RELM: Mapped GPA 0x%llx -> HPA 0x%llx (flags=0x%llx)\n",
            gpa, hpa, flags);
     
+    relm_ept_invalidate_context(ept); 
     return 0; 
 }
 
@@ -457,7 +458,7 @@ int relm_unmap_page(struct ept_context *ept, uint64_t gpa)
     }
 
     pt = (ept_pt_t*)phys_to_virt(
-        pd->entries[pdpt_idx] & EPT_ADDR_MASK); 
+        pd->entries[pd_idx] & EPT_ADDR_MASK); 
 
     pt_idx = EPT_PT_INDEX(gpa); 
 

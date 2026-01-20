@@ -67,7 +67,7 @@
 /*bits 11:7 - Reserved (must be 0)
 * bits N:12 - Physical address of EPT PML4 table (4KB aligned) */ 
 
-#define CONSTRUCT_EPTP(pml4_pa, memtype, enable_ad)  \ 
+#define CONSTRUCT_EPTP(pml4_pa, memtype, enable_ad)  \
     (((pml4_pa) & EPT_ADDR_MASK) |                  \
      EPTP_PAGE_WALK_LENGTH_4 |                      \
      ((enable_ad) ? EPTP_ENABLE_AD_FLAGS : 0) |     \
@@ -154,7 +154,7 @@ void relm_ept_dump_tables(struct ept_context *ept);
 #define EPT_PDPT_INDEX(gpa)     (((gpa) >> 30) & 0x1FF)
 #define EPT_PD_INDEX(gpa)       (((gpa) >> 21) & 0x1FF)
 #define EPT_PT_INDEX(gpa)       (((gpa) >> 12) & 0x1FF)
-#define EPT_PAGE_OFFSET(gpa)    ((gpa) >> 0xFFF )
+#define EPT_PAGE_OFFSET(gpa)    ((gpa) & 0xFFF )
 
 
 /*EPT capabality bits (IA32_VMX_EPT_VPID_CAP_ MSR) */ 
