@@ -435,7 +435,7 @@ int relm_unmap_page(struct ept_context *ept, uint64_t gpa)
     }
 
     pdpt = (ept_pdpt_t *)phys_to_virt(
-        ept->pml4.entries[pml4_idx] & EPT_ADDR_MASK);
+        ept->pml4->entries[pml4_idx] & EPT_ADDR_MASK);
 
     pdpt_idx = EPT_PDPT_INDEX(gpa); 
 
@@ -491,7 +491,7 @@ int relm_get_mapping(struct ept_context *ept, uint64_t gpa, uint64_t *hpa)
     ept_pdpt_t *pdpt; 
     ept_pd_t *pd; 
     ept_pt_t *pt; 
-    ept_entry_t *leaf_entry; 
+    ept_entry_t leaf_entry; 
     unsigned long irq_flags; 
 
     uint32_t pml4_idx; 

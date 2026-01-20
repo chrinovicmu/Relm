@@ -100,6 +100,7 @@
 #define HOST_STACK_ORDER                2 
 #define GUEST_STACK_SIZE                64 
 
+/*
 struct desc64 {
 	uint16_t limit0;
 	uint16_t base0;
@@ -221,5 +222,5 @@ static inline uint64_t get_desc64_base(const struct desc64 *desc)
 	return ((uint64_t)desc->base3 << 32) |
 		(desc->base0 | ((desc->base1) << 16) | ((desc->base2) << 24));
 }
-
+*/ 
 #endif  

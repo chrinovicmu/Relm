@@ -1,22 +1,22 @@
 MODULE_NAME := relm
+obj-m := $(MODULE_NAME).o 
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
 
-obj-m := $(MODULE_NAME).o
-
+# Defining the objects that make up the module
 $(MODULE_NAME)-y := \
 	src/module.o \
 	src/vm.o \
 	src/vmx.o \
 	src/vmx_asm.o \
-	src/ept.o 
+	src/vmexit.o \
+	src/ept.o
 
-# Use ccflags-y to add the include directory to the search path
-# We use $(src) which is a Kbuild variable pointing to your module source root
+# ccflags-y adds include directories
 ccflags-y := -I$(src)/include -I$(src)/utils
 
-.PHONY: all clean modules install unload reload
+.PHONY: all clean modules
 
 all: modules
 
@@ -25,4 +25,3 @@ modules:
 
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
-# ... rest of your file
