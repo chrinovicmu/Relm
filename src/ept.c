@@ -363,7 +363,7 @@ int relm_ept_map_page(struct ept_context *ept, uint64_t gpa,
     PDEBUG("RELM: Mapped GPA 0x%llx -> HPA 0x%llx (flags=0x%llx)\n",
            gpa, hpa, flags);
     
-    relm_ept_invalidate_context(ept); 
+   // relm_ept_invalidate_context(ept); 
     return 0; 
 }
 
@@ -477,7 +477,7 @@ int relm_unmap_page(struct ept_context *ept, uint64_t gpa)
     spin_unlock_irqrestore(&ept->lock, irq_flags);
 
     /*invalidate EPT TLB entries for the entir context to ensure consistency */ 
-    relm_ept_invalidate_context(ept); 
+//    relm_ept_invalidate_context(ept); 
 
     PDEBUG("RELM: Unmapped GPA 0x%llx\n", gpa);
 

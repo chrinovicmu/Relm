@@ -83,32 +83,42 @@ const uint32_t relm_vmentry_msr_indices[] = {
 
 uint64_t relm_vmentry_msr_values[RELM_VMENTRY_MSR_COUNT]; 
 
+
 inline bool relm_vmx_support(void) 
 {
-    unsigned int ecx; 
+    unsigned int eax = 1, ebx, ecx = 0, edx;
 
-   __asm__ volatile (
+    __asm__ volatile (
         "cpuid"
-        : "=c"(ecx)        
-        : "a"(1)          
-        : "ebx", "edx"
+        : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+        : "a"(eax)
+        : "memory"
     );  
 
-    return (ecx & (1 << 5)) != 0;  
+    pr_info("RELM: CPUID(1) ECX=0x%x\n", ecx);
+
+    return (ecx & (1 << 5)) != 0;  /* VMX bit */
 }
 
-static inline void relm_enable_vmx_operation(void)
+inline void relm_enable_vmx_operation(void)
 {
     uint64_t cr4;
 
-    __asm__ volatile (
-        "mov %%cr4, %0\n\t"
-        "or %1, %0\n\t"
-        "mov %0, %%cr4\n\t"
-        : "=&r"(cr4)
-        : "i"(1UL << 13)
-        : "memory"
-    );
+    /* Read CR4 safely */
+    asm volatile("mov %%cr4, %0" : "=r"(cr4));
+
+    /* Only set VMXE if not already set */
+    if (!(cr4 & (1UL << 13))) {
+        cr4 |= (1UL << 13);
+        asm volatile("mov %0, %%cr4" :: "r"(cr4) : "memory");
+    }
+
+    /* Optional verification (for debug) */
+    asm volatile("mov %%cr4, %0" : "=r"(cr4));
+    if (!(cr4 & (1UL << 13)))
+        pr_err("RELM: VMXE bit not set in CR4!\n");
+
+    pr_info("RELM: VMX operation enabled\n"); 
 }
 
 bool relm_setup_feature_control(void)
@@ -121,27 +131,23 @@ bool relm_setup_feature_control(void)
         IA32_FEATURE_CONTROL_LOCKED | 
         IA32_FEATURE_CONTROL_MSR_VMXON_ENABLE_OUTSIDE_SMX;
 
-    /*if MSR is locked, we can olny verify that VMXON is allowed */ 
-    if(fc & IA32_FEATURE_CONTROL_LOCKED)
-    {
-        if(!(fc & IA32_FEATURE_CONTROL_MSR_VMXON_ENABLE_OUTSIDE_SMX))
-        {
-            pr_err("feature control locked but VMXON not enbale"); 
+    /* If MSR is locked, verify VMXON is allowed */ 
+    if (fc & IA32_FEATURE_CONTROL_LOCKED) {
+        if (!(fc & IA32_FEATURE_CONTROL_MSR_VMXON_ENABLE_OUTSIDE_SMX)) {
+            pr_err("RELM: Feature control locked but VMXON not enabled\n"); 
             return false; 
         }
         return true; 
     }
 
-    /*lock MSR */ 
+    /* Lock MSR and set required bits */
     __wrmsr(MSR_IA32_FEATURE_CONTROL,
-            (uint32_t)(required & 0xFFFFFFFF) ,
-            (uint32_t)((required >> 32) & 0xFFFFFFFF)); 
+             (uint32_t)(fc | required & 0xFFFFFFFF),
+             (uint32_t)((fc | required >> 32) & 0xFFFFFFFF)); 
 
     fc = __rdmsr1(MSR_IA32_FEATURE_CONTROL); 
-
-    if((fc & required) != required)
-    {
-        pr_err("failed to lock IA32_FEATURE_CONTROL with required bit\n"); 
+    if ((fc & required) != required) {
+        pr_err("RELM: Failed to lock/setup IA32_FEATURE_CONTROL MSR\n"); 
         return false; 
     }
 
@@ -394,17 +400,7 @@ static struct host_cpu * relm_host_cpu_create(int logical_cpu_id)
 
         hcpu->logical_cpu_id = -1; 
         kfree(hcpu); 
-        return NULL; 
-    }
-
-    relm_enable_vmx_operation(); 
-
-    if(!relm_setup_feature_control())
-    {
-        pr_err("RELM: Failed to setup feature control MSR\n"); 
-        relm_free_vmxon_region(hcpu); 
-        kfree(hcpu); 
-        return NULL; 
+        return NULL;  
     }
 
     ret = relm_vmxon(hcpu); 
@@ -1041,7 +1037,6 @@ static int relm_create_guest_page_tables(struct vcpu *vcpu)
     
     return 0;
 }
-
 struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
 {
     if(!vm)
@@ -1051,10 +1046,14 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
     struct host_cpu *hcpu; 
     int ret; 
 
+    PDEBUG("RELM: Allocating zeroed VCPU struct\n");
     /* Allocate zeroed VCPU struct */
     vcpu = kzalloc(sizeof(*vcpu), GFP_KERNEL);
-    if (!vcpu)
+    if (!vcpu) {
+        PDEBUG("RELM: Failed to allocate VCPU struct\n");
         return ERR_PTR(-ENOMEM);
+    }
+    PDEBUG("RELM: VCPU struct allocated at %p\n", vcpu);
 
     vcpu->vm = vm;
     vcpu->vpid = vpid;
@@ -1065,57 +1064,75 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
     vcpu->regs.rflags = 0x2; 
     vcpu->regs.rip = 0x0; 
 
-
+    PDEBUG("RELM: Initializing spinlock and waitqueue\n");
     /* Initialize spinlock */
     spin_lock_init(&vcpu->lock);
     init_waitqueue_head(&vcpu->wq); 
 
+    PDEBUG("RELM: Allocating host CPU structure\n");
     hcpu = relm_host_cpu_create(HOST_CPU_ID); 
-    if(IS_ERR_OR_NULL(hcpu))
+    if(IS_ERR_OR_NULL(hcpu)) {
+        PDEBUG("RELM: Failed to create host CPU\n");
         goto _out_free_vcpu; 
+    }
+    PDEBUG("RELM: Host CPU allocated: hcpu=%p\n", hcpu);
 
     vcpu->hcpu = hcpu; 
     vcpu->target_cpu_id = hcpu->logical_cpu_id; 
 
+    PDEBUG("RELM: Allocating vCPU host stack\n");
     /*alllocate vCPU stack */ 
     vcpu->host_stack = (void *)__get_free_pages(
         GFP_KERNEL | __GFP_ZERO, 
         HOST_STACK_ORDER
     ); 
-    if(!vcpu->host_stack)
+    if(!vcpu->host_stack) {
+        PDEBUG("RELM: Failed to allocate host stack\n");
         goto _out_free_host_cpu; 
+    }
+    PDEBUG("RELM: Host stack allocated at %p\n", vcpu->host_stack);
 
     /*point to top of host stack */ 
     vcpu->host_rsp =
         (uint64_t)vcpu->host_stack + (PAGE_SIZE << HOST_STACK_ORDER); 
+    PDEBUG("RELM: Host RSP set to 0x%llx\n", vcpu->host_rsp);
 
+    PDEBUG("RELM: Setting up VMCS region\n");
     /* Allocate and setup VMCS region */
     if (relm_setup_vmcs_region(vcpu) != 0)
     {
         pr_err("RELM: Failed to setup VMCS region\n");
         goto _out_free_host_stack; 
     }
+    PDEBUG("RELM: VMCS region setup complete\n");
 
+    PDEBUG("RELM: Performing VMCLEAR\n");
     ret = relm_vmclear(vcpu); 
+    PDEBUG("RELM: VMCLEAR returned %d\n", ret);
     if(ret != 0)
     {
         pr_err("RELM: VMCLEAR failed\n"); 
         goto _out_free_vmcs; 
     }
 
+    PDEBUG("RELM: Performing VMPTRLD\n");
     ret = relm_vmptrld(vcpu);
+    PDEBUG("RELM: VMPTRLD returned %d\n", ret);
     if(ret != 0)
     {
         pr_err("RELM: VMPTRLD failed\n"); 
         goto _out_free_vmcs; 
     }
+
     if(vm->ept){
+        PDEBUG("RELM: Writing EPT_POINTER to VMCS: 0x%llx\n", vm->ept->eptp);
         CHECK_VMWRITE(EPT_POINTER, vm->ept->eptp); 
     }else{
-        pr_err("RELM: No EPT POINTER - cannot continiue"); 
+        pr_err("RELM: No EPT POINTER - cannot continue\n"); 
         goto _out_free_vmcs; 
     }
 
+    PDEBUG("RELM: Setting up VMX execution controls\n");
     if(relm_setup_exec_controls(vcpu) != 0)
     {
         pr_err("RELM: Failed to setup VMX execution controls\n"); 
@@ -1125,10 +1142,12 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
     if(_cpu_has_vpid())
     {
         uint64_t vpid = vcpu->vpid; 
+        PDEBUG("RELM: CPU has VPID, writing VMCS_VPID: %llu\n", vpid);
         CHECK_VMWRITE(VMCS_VPID, vpid); 
     }
 
-     /* Setup IO bitmap */
+    PDEBUG("RELM: Setting up IO bitmap\n");
+    /* Setup IO bitmap */
     if(relm_vcpu_io_bitmap_enabled(vcpu))
     {
         if (relm_setup_io_bitmap(vcpu) != 0)
@@ -1138,11 +1157,13 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
         }
     }
 
+    PDEBUG("RELM: Setting exception bitmap\n");
     /* we catch #UD (6) to prevent guest crashes on unsupported instructions.
      * we catch #PF (14) if we are using Shadow Paging or debugging memory.
      */
     vcpu->exception_bitmap = (1U << 6) | (1U << 14); 
 
+    PDEBUG("RELM: Setting up MSR bitmap\n");
     /* Setup MSR bitmap */
     if(relm_vcpu_msr_bitmap_enabled(vcpu))
     {
@@ -1153,17 +1174,20 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
         }
     }
 
+    PDEBUG("RELM: Setting up MSR state\n");
     if(relm_vcpu_setup_msr_state(vcpu) != 0)
     {
         pr_err("Failed to setup MSR areas\n"); 
         goto _out_free_msr_bitmap; 
     }
 
+    PDEBUG("RELM: Creating guest page tables\n");
     if (relm_create_guest_page_tables(vcpu) != 0) {
         pr_err("RELM: Failed to create guest page tables\n");
         goto _out_free_msr_areas;
     }
 
+    PDEBUG("RELM: VCPU allocation and initialization complete\n");
     return vcpu; 
 
 _out_free_msr_bitmap:

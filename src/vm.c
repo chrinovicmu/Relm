@@ -145,7 +145,7 @@ int relm_vm_allocate_guest_ram(struct relm_vm *vm, uint64_t size, uint64_t gpa_s
             __free_page(page);
             goto _cleanup;
         }
-       
+        
         /*progress indicator for every 256MB*/
         if (i > 0 && (i % (256 * 1024 * 1024 / PAGE_SIZE)) == 0)
         {
@@ -160,7 +160,7 @@ int relm_vm_allocate_guest_ram(struct relm_vm *vm, uint64_t size, uint64_t gpa_s
 
     pr_info("RELM: Successfully allocated and mapped guest RAM\n");
    
-    relm_ept_invalidate_context(vm->ept);
+  //  relm_ept_invalidate_context(vm->ept);
    
     return 0;
 
@@ -221,7 +221,8 @@ struct relm_vm * relm_create_vm(int vm_id, const char *vm_name,
     vm->state = VM_STATE_CREATED;
     vm->max_vcpus = RELM_MAX_VCPUS;
     vm->online_vcpus = 0;
-    vm->ops = &relm_default_ops;
+
+   // vm->ops = &relm_default_ops;
 
     if(vm_name)
         strscpy(vm->vm_name, vm_name, sizeof(vm->vm_name));
@@ -230,28 +231,36 @@ struct relm_vm * relm_create_vm(int vm_id, const char *vm_name,
 
     spin_lock_init(&vm->lock);
  
-   /*
+   
     if(!relm_ept_check_support())
     {
         pr_err("relm: EPT not supported on this CPU\n");
-        goto _out_free_vm;
+      //  goto _out_free_vm;
+        return NULL;
     }
+    pr_info("EPT is supported on this CPU\n"); 
 
-    vm->ept = relm_ept_context_create();
+    /*
+    ->ept = relm_ept_context_create();
     if(IS_ERR(vm->ept))
     {
         pr_err("relm: Failed to create EPT context\n");
         vm->ept = NULL;
-        goto _out_free_vm;
+        return NULL; 
+       // goto _out_free_vm;
     }
-*/ 
+
+ i*/ 
+
     ret = relm_setup_ept(vm); 
     if(ret < 0)
     {
         pr_err("RELM: Failed to setup EPT context in VM\n"); 
         goto _out_free_vm; 
+        return NULL; 
     }
 
+    pr_info("EPT context CREATED!!\n"); 
     pr_info("RELM: Created EPT context for VM %d (EPTP=0x%llx)\n",
             vm_id, vm->ept->eptp);
 
@@ -262,6 +271,7 @@ struct relm_vm * relm_create_vm(int vm_id, const char *vm_name,
         {
             pr_err("RELM: Failed to allocate guest RAM\n");
             goto _out_free_ept;
+            return NULL; 
         }
         pr_info("RELM: Allocated %llu MB guest RAM\n", ram_size >> 20);
     }
@@ -278,6 +288,7 @@ struct relm_vm * relm_create_vm(int vm_id, const char *vm_name,
     pr_info("RELM: VM '%s' (ID: %d) created with %llu MB RAM\n",
             vm->vm_name, vm->vm_id, (ram_size >> 20));
 
+    pr_info("RELM: VM is created!!"); 
     return vm;
 
 _out_free_memory:
@@ -291,6 +302,7 @@ _out_free_ept:
 _out_free_vm:
     kfree(vm);
     return NULL;
+    
 }
 
 void relm_destroy_vm(struct relm_vm *vm)

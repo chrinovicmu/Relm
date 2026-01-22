@@ -149,6 +149,9 @@ struct host_cpu
     spinlock_t lock; 
 };
 
+inline bool relm_vmx_support(void);
+inline void relm_enable_vmx_operation(void);
+bool relm_setup_feature_control(void);
 struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vcpu_id);
 int relm_vcpu_pin_to_cpu(struct vcpu *vcpu, int target_cpu_id);
 void relm_vcpu_unpin_and_stop(struct vcpu *vcpu);
