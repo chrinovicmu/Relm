@@ -273,7 +273,7 @@ static inline int _vmlaunch(void)
 static inline int _get_vmcs_size(void)
 {
     uint64_t vmx_basic = __rdmsr1(MSR_IA32_VMX_BASIC); 
-    uint32_t vmcs_size = (vmx_basic > 32) & 0x1FFF; 
+    uint32_t vmcs_size = (vmx_basic >> 32) & 0x1FFF; 
 
     if(!vmcs_size)
     {

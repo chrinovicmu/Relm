@@ -4,6 +4,9 @@
 #include <vmx_ops.h> 
 #include <vmexit.h> 
 
+#define CREATE_TRACE_POINTS 
+#include <trace/events/relm.h> 
+
 int handle_vmexit(struct stack_guest_gprs *guest_gprs)
 {
     struct vcpu *vcpu;
@@ -12,6 +15,10 @@ int handle_vmexit(struct stack_guest_gprs *guest_gprs)
     uint64_t guest_rip;
     uint64_t guest_rsp;
     uint64_t instr_len;
+    u64 start_time, end_time,, duration; 
+
+    start_time = ktime_get_ns(); 
+    
 
     vcpu = relm_get_current_vcpu();
     if(!vcpu)
@@ -262,5 +269,14 @@ int handle_vmexit(struct stack_guest_gprs *guest_gprs)
             vcpu->state = VCPU_STATE_STOPPED;
             return 0;
     }
+
+    end_time = ktime_get_ns(); 
+    duration = end_time - start_time; 
+
+    trace_relm_vm_exit(vcpu->vpid, 
+                       exit_reason, 
+                       vcpu->guest_rip, 
+                       exit_qualification, 
+                       duration); 
 }
 
