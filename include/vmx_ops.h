@@ -1,8 +1,8 @@
 #ifndef VMX_OPS_H 
 #define VMX_OPS_H
 
-#include "vmcs_state.h"
-#include "vmcs.h"
+#include <include/vmcs_state.h>
+#include <include/vmcs.h>
 
 static __always_inline void __attribute__((used)) ex_handler_rdmsr_unsafe(void)
 {

@@ -12,13 +12,16 @@
 #include <linux/kthread.h>
 #include <asm/processor.h>
 #include <asm/msr.h>
-#include <asm/io.h> 
+#include <asm/io.h>
+#include <asm/desc.h> 
 
-#include <vmx.h>
-#include <vmcs.h>
-#include <vmx_ops.h>
-#include <ept.h> 
-#include <utils.h>
+#include <include/vmx.h>
+#include <include/vm.h>
+#include <include/ept.h>
+#include <include/vmx_ops.h>
+#include <include/vmexit.h>
+#include <include/vmcs_state.h>
+#include <utils/utils.h>
 
 static int relm_setup_vmxon_region(struct host_cpu *hcpu);
 static int relm_setup_vmcs_region(struct vcpu *vcpu);
@@ -886,12 +889,14 @@ static void relm_init_exec_controls(struct vcpu *vcpu)
         controls->secondary_proc = 
             controls->secondary_proc | VMCS_PROC2_VPID; 
 
-    controls->vm_entry = 
+    controls->vm_entry =
+        VM_ENTRY_IA32E_MODE |
         VMCS_ENTRY_LOAD_GUEST_PAT | 
         VMCS_ENTRY_LOAD_IA32_EFER | 
         VMCS_ENTRY_LOAD_DEBUG; 
 
     controls->vm_exit = 
+        VM_EXIT_HOST_ADDR_SPACE_SIZE | 
         VMCS_EXIT_SAVE_IA32_PAT |
         VMCS_EXIT_LOAD_IA32_PAT |
         VMCS_EXIT_SAVE_EFER |
@@ -962,6 +967,80 @@ int relm_setup_exec_controls(struct vcpu *vcpu)
 
 }
 
+static int relm_create_guest_page_tables(struct vcpu *vcpu)
+{
+    uint64_t *pml4;      // Page Map Level 4 (top level)
+    uint64_t *pdpt;      // Page Directory Pointer Table
+    uint64_t *pd;        // Page Directory
+    uint64_t pml4_gpa, pdpt_gpa, pd_gpa;
+    uint64_t pml4_hpa, pdpt_hpa, pd_hpa;
+    int i;
+
+    if (!vcpu || !vcpu->vm || !vcpu->vm->ept)
+        return -EINVAL;
+
+    // Allocate 3 pages for page tables (PML4, PDPT, PD)
+    // We allocate from guest RAM at a high address to avoid conflicts
+    
+    // Put page tables at the end of guest RAM
+    uint64_t pt_base_gpa = vcpu->vm->total_guest_ram - (3 * PAGE_SIZE);
+    
+    pr_info("RELM: Creating guest page tables at GPA 0x%llx\n", pt_base_gpa);
+    
+    // Map the page table pages in EPT so we can write to them
+    struct page *pml4_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
+    struct page *pdpt_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
+    struct page *pd_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
+    
+    if (!pml4_page || !pdpt_page || !pd_page) {
+        if (pml4_page) __free_page(pml4_page);
+        if (pdpt_page) __free_page(pdpt_page);
+        if (pd_page) __free_page(pd_page);
+        return -ENOMEM;
+    }
+    
+    // Get physical addresses
+    pml4_hpa = page_to_phys(pml4_page);
+    pdpt_hpa = page_to_phys(pdpt_page);
+    pd_hpa = page_to_phys(pd_page);
+    
+    // Guest physical addresses (where guest will see them)
+    pml4_gpa = pt_base_gpa;
+    pdpt_gpa = pt_base_gpa + PAGE_SIZE;
+    pd_gpa = pt_base_gpa + (2 * PAGE_SIZE);
+    
+    // Map them in EPT
+    relm_ept_map_page(vcpu->vm->ept, pml4_gpa, pml4_hpa, EPT_RWX);
+    relm_ept_map_page(vcpu->vm->ept, pdpt_gpa, pdpt_hpa, EPT_RWX);
+    relm_ept_map_page(vcpu->vm->ept, pd_gpa, pd_hpa, EPT_RWX);
+    
+    // Get virtual addresses so we can write to them
+    pml4 = page_address(pml4_page);
+    pdpt = page_address(pdpt_page);
+    pd = page_address(pd_page);
+    
+    // Build page table hierarchy
+    // PML4[0] → PDPT
+    pml4[0] = pdpt_gpa | 0x7;  // Present, R/W, User
+    
+    // PDPT[0] → PD
+    pdpt[0] = pd_gpa | 0x7;    // Present, R/W, User
+    
+    // PD entries: Identity map first 1GB using 2MB pages
+    // Each PD entry covers 2MB
+    for (i = 0; i < 512; i++) {
+        // 2MB page at physical address (i * 2MB)
+        // Bit 7 (PS) = 1 for 2MB pages
+        pd[i] = (i * 0x200000ULL) | 0x87;  // Present, R/W, User, PS
+    }
+    
+    // Set guest CR3 to point to PML4
+    vcpu->cr3 = pml4_gpa;
+    
+    pr_info("RELM: Guest page tables created - CR3 = 0x%llx\n", vcpu->cr3);
+    
+    return 0;
+}
 
 struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
 {
@@ -1030,6 +1109,12 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
         pr_err("RELM: VMPTRLD failed\n"); 
         goto _out_free_vmcs; 
     }
+    if(vm->ept){
+        CHECK_VMWRITE(EPT_POINTER, vm->ept->eptp); 
+    }else{
+        pr_err("RELM: No EPT POINTER - cannot continiue"); 
+        goto _out_free_vmcs; 
+    }
 
     if(relm_setup_exec_controls(vcpu) != 0)
     {
@@ -1074,20 +1159,31 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
         goto _out_free_msr_bitmap; 
     }
 
+    if (relm_create_guest_page_tables(vcpu) != 0) {
+        pr_err("RELM: Failed to create guest page tables\n");
+        goto _out_free_msr_areas;
+    }
+
     return vcpu; 
 
 _out_free_msr_bitmap:
     relm_free_msr_bitmap(vcpu);
+
 _out_free_io_bitmap:
     relm_free_io_bitmap(vcpu);
+
 _out_free_msr_areas:
     relm_free_all_msr_areas(vcpu);
+
 _out_free_vmcs:
     relm_free_vmcs_region(vcpu);
+
 _out_free_host_stack:
     free_pages((unsigned long)vcpu->host_stack, HOST_STACK_ORDER);
+
 _out_free_host_cpu:
     relm_destroy_host_cpu(vcpu->hcpu); 
+    
 _out_free_vcpu:
     kfree(vcpu);
     return NULL; 
@@ -1177,7 +1273,57 @@ static int relm_setup_host_state(struct vcpu *vcpu)
     CHECK_VMWRITE(HOST_ES_SELECTOR, __KERNEL_DS & 0xF8);
     CHECK_VMWRITE(HOST_FS_SELECTOR, 0);
     CHECK_VMWRITE(HOST_GS_SELECTOR, 0);
+    
+    u16 tr; 
+    struct desc_ptr gdt; 
+    unsigned long tr_base; 
 
+    /*read TR selector */ 
+    __asm__ __volatile__ (
+        "str %0" 
+        : "=r"(tr)); 
+
+    /*read GDT*/ 
+    __asm__ __volatile__ (
+            "sgdt %0"
+            : "=m"(gdt)); 
+
+    /*calculate TR base from GDT*/ 
+    if(tr)
+    {
+        struct desc_struct *gdt_desc= (struct desc_struct*)gdt.address; 
+        unsigned int index = tr >> 3; 
+        
+        tr_base = gdt_desc[index].base0 |
+            (gdt_desc[index].base1 << 16) |
+            (gdt_desc[index].base2 << 24); 
+    
+        #ifndef CONFIG_X86_64
+        /*for 64 bit TSS descriptor is 16 bytes*/  
+        if(index + 1 < (gdt.size + 1) / 8)
+        {
+            unsigned long base_high = *(unsigned long *)&gdt_desc[index + 1]; 
+            tr_base |= (base_high << 32);
+        }
+        #endif
+    }
+    else {
+        pr_err("RELM: TR selector is 0, cannot continue\n"); 
+        return -EINVAL; 
+    }
+
+    CHECK_VMWRITE(HOST_TR_SELECTOR, tr & 0xFFF8); 
+    CHECK_VMWRITE(HOST_TR_BASE, tr_base); 
+    CHECK_VMWRITE(HOST_GDTR_BASE, gdt.address); 
+
+    struct desc_ptr idt; 
+    __asm__ __volatile__ (
+        "sidt %0"
+        : "=m"(idt));
+
+    CHECK_VMWRITE(HOST_IDTR_BASE, idt.address); 
+
+    CHECK_VMWRITE(VMCS_LINK_POINTER, 0xFFFFFFFFFFFFFFFFULL);
     /* FS/GS base */
     CHECK_VMWRITE(HOST_FS_BASE, __rdmsr1(MSR_FS_BASE));
     CHECK_VMWRITE(HOST_GS_BASE, __rdmsr1(MSR_GS_BASE));

@@ -14,8 +14,8 @@ $(MODULE_NAME)-y := \
 	src/ept.o
 
 # ccflags-y adds include directories
-ccflags-y := -I$(src)/include -I$(src)/utils
 
+ccflags-y := -I$(src) -I$(src)/utils
 .PHONY: all clean modules
 
 all: modules

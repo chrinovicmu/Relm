@@ -2,9 +2,9 @@
 #define VM_H
 
 
-#include <vmx.h>
-#include <vmx_ops.h>
-#include <ept.h> 
+#include <include/vmx.h>
+#include <include/vmx_ops.h>
+#include <include/ept.h> 
 
 #define RELM_MAX_VCPUS 1  
 #define GUEST_STACK_ORDER 2 

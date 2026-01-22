@@ -6,7 +6,7 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/errno.h>
-#include <vmx_ops.h>
+#include <include/vmx_ops.h>
 
 #define CACHE_LINE_SIZE 64
 

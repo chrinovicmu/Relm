@@ -7,13 +7,13 @@
 #include <asm/io.h>
 #include <asm/msr.h>
 
-#include <vmx.h>
-#include <vm.h> 
-#include <ept.h>
-#include <vmx_ops.h>
-#include <vmexit.h>
-#include <vmcs_state.h> 
-#include <utils.h> 
+#include <include/vmx.h>
+#include <include/vm.h>
+#include <include/ept.h>
+#include <include/vmx_ops.h>
+#include <include/vmexit.h>
+#include <include/vmcs_state.h>
+#include <utils/utils.h>
 
 static inline void _invept(uint64_t type, uint64_t eptp)
 {
@@ -98,8 +98,6 @@ int relm_setup_ept(struct relm_vm *vm)
         pr_err("RELM: Failed to create EPT context: %d\n"); 
         return err; 
     }
-
-    CHECK_VMWRITE(EPT_POINTER, vm->ept->eptp); 
 
     pr_info("RELM: EPT setup complete for VM %d (EPTP=0x%llx)\n", 
             vm->vm_id, vm->ept->eptp); 
@@ -273,7 +271,7 @@ static void *relm_ept_get_or_create_table(ept_entry_t *entry_ptr, int level)
     if(!table_va)
         return NULL; 
 
-    table_pa = virt_to_phys(table_pa); 
+    table_pa = virt_to_phys(table_va); 
 
     /*create entry pointing to new table 
      * for non-leaf entries , we give RWX permissions*/ 

@@ -2,8 +2,14 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/delay.h>
-#include <vmx.h>
-#include <vm.h>
+
+#include <include/vmx.h>
+#include <include/vm.h>
+#include <include/ept.h>
+#include <include/vmx_ops.h>
+#include <include/vmexit.h>
+#include <include/vmcs_state.h>
+#include <utils/utils.h>
 
 static struct relm_vm *my_vm = NULL; 
 

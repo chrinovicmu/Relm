@@ -1,11 +1,14 @@
 #include <linux/types.h>
-#include <vmcs_state.h> 
-#include <vmx.h> 
-#include <vmx_ops.h> 
-#include <vmexit.h> 
+#include <include/vmx.h>
+#include <include/vm.h>
+#include <include/ept.h>
+#include <include/vmx_ops.h>
+#include <include/vmexit.h>
+#include <include/vmcs_state.h>
+#include <utils/utils.h>
 
 #define CREATE_TRACE_POINTS 
-#include <trace/events/relm.h> 
+#include <include/trace/events/relm.h> 
 
 int handle_vmexit(struct stack_guest_gprs *guest_gprs)
 {
@@ -15,7 +18,7 @@ int handle_vmexit(struct stack_guest_gprs *guest_gprs)
     uint64_t guest_rip;
     uint64_t guest_rsp;
     uint64_t instr_len;
-    u64 start_time, end_time,, duration; 
+    u64 start_time, end_time, duration; 
 
     start_time = ktime_get_ns(); 
     
@@ -275,7 +278,7 @@ int handle_vmexit(struct stack_guest_gprs *guest_gprs)
 
     trace_relm_vm_exit(vcpu->vpid, 
                        exit_reason, 
-                       vcpu->guest_rip, 
+                       vcpu->regs.rip, 
                        exit_qualification, 
                        duration); 
 }

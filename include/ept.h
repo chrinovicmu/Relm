@@ -2,8 +2,8 @@
 #define EPT_H
 
 #include <linux/types.h>
-#include <vmx.h>
-#include <vm.h> 
+#include <include/vmx.h>
+#include <include/vm.h> 
 
 #define EPT_POINTER             0x0000201A
 

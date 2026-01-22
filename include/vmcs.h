@@ -5,7 +5,7 @@
 #include <linux/kern_levels.h>
 #include <asm/msr-index.h>
 #include <asm/processor-flags.h>
-#include "vmcs_state.h"
+#include <include/vmcs_state.h>
 
 /* VMX Basic Constants */
 #define X86_CR4_VMXE_BIT      13

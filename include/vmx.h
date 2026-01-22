@@ -5,9 +5,9 @@
 #include <linux/spinlock.h>
 #include <linux/wait.h>
 #include <linux/sched.h>
-#include <vmx_ops.h>
-#include <vmcs.h>
-#include <ept.h> 
+#include <include/vmx_ops.h>
+#include <include/vmcs.h>
+#include <include/ept.h> 
 
 #define VPID_TO_INDEX(vpid) ((vpid) -1)
 #define INDEX_TO_VPID(index) ((index) + 1)

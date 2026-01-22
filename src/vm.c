@@ -6,10 +6,14 @@
 #include <linux/mm.h>        
 #include <linux/page-flags.h>
 #include <linux/highmem.h>   
-#include <vmx.h>
-#include <vm.h>
-#include <ept.h>
-#include <utils.h>
+
+#include <include/vmx.h>
+#include <include/vm.h>
+#include <include/ept.h>
+#include <include/vmx_ops.h>
+#include <include/vmexit.h>
+#include <include/vmcs_state.h>
+#include <utils/utils.h>
 
 DEFINE_PER_CPU(struct vcpu *, current_vcpu);
 

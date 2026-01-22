@@ -1,11 +1,11 @@
 #ifndef VMEXIT_H
 #define VMEXIT_H
 
-#include <vm.h> 
-#include <vmcs_state.h>
-#include <vmx.h>
-#include <vmx_ops.h>
-#include <utils.h> 
+#include <include/vm.h> 
+#include <include/vmcs_state.h>
+#include <include/vmx.h>
+#include <include/vmx_ops.h>
+#include <utils/utils.h> 
 
 #define VM_EXIT_REASON                          0x00004402
 #define VM_EXIT_QUALIFICATION                   0x00006400
