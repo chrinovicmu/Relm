@@ -963,80 +963,6 @@ int relm_setup_exec_controls(struct vcpu *vcpu)
 
 }
 
-static int relm_create_guest_page_tables(struct vcpu *vcpu)
-{
-    uint64_t *pml4;      // Page Map Level 4 (top level)
-    uint64_t *pdpt;      // Page Directory Pointer Table
-    uint64_t *pd;        // Page Directory
-    uint64_t pml4_gpa, pdpt_gpa, pd_gpa;
-    uint64_t pml4_hpa, pdpt_hpa, pd_hpa;
-    int i;
-
-    if (!vcpu || !vcpu->vm || !vcpu->vm->ept)
-        return -EINVAL;
-
-    // Allocate 3 pages for page tables (PML4, PDPT, PD)
-    // We allocate from guest RAM at a high address to avoid conflicts
-    
-    // Put page tables at the end of guest RAM
-    uint64_t pt_base_gpa = vcpu->vm->total_guest_ram - (3 * PAGE_SIZE);
-    
-    pr_info("RELM: Creating guest page tables at GPA 0x%llx\n", pt_base_gpa);
-    
-    // Map the page table pages in EPT so we can write to them
-    struct page *pml4_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
-    struct page *pdpt_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
-    struct page *pd_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
-    
-    if (!pml4_page || !pdpt_page || !pd_page) {
-        if (pml4_page) __free_page(pml4_page);
-        if (pdpt_page) __free_page(pdpt_page);
-        if (pd_page) __free_page(pd_page);
-        return -ENOMEM;
-    }
-    
-    // Get physical addresses
-    pml4_hpa = page_to_phys(pml4_page);
-    pdpt_hpa = page_to_phys(pdpt_page);
-    pd_hpa = page_to_phys(pd_page);
-    
-    // Guest physical addresses (where guest will see them)
-    pml4_gpa = pt_base_gpa;
-    pdpt_gpa = pt_base_gpa + PAGE_SIZE;
-    pd_gpa = pt_base_gpa + (2 * PAGE_SIZE);
-    
-    // Map them in EPT
-    relm_ept_map_page(vcpu->vm->ept, pml4_gpa, pml4_hpa, EPT_RWX);
-    relm_ept_map_page(vcpu->vm->ept, pdpt_gpa, pdpt_hpa, EPT_RWX);
-    relm_ept_map_page(vcpu->vm->ept, pd_gpa, pd_hpa, EPT_RWX);
-    
-    // Get virtual addresses so we can write to them
-    pml4 = page_address(pml4_page);
-    pdpt = page_address(pdpt_page);
-    pd = page_address(pd_page);
-    
-    // Build page table hierarchy
-    // PML4[0] → PDPT
-    pml4[0] = pdpt_gpa | 0x7;  // Present, R/W, User
-    
-    // PDPT[0] → PD
-    pdpt[0] = pd_gpa | 0x7;    // Present, R/W, User
-    
-    // PD entries: Identity map first 1GB using 2MB pages
-    // Each PD entry covers 2MB
-    for (i = 0; i < 512; i++) {
-        // 2MB page at physical address (i * 2MB)
-        // Bit 7 (PS) = 1 for 2MB pages
-        pd[i] = (i * 0x200000ULL) | 0x87;  // Present, R/W, User, PS
-    }
-    
-    // Set guest CR3 to point to PML4
-    vcpu->cr3 = pml4_gpa;
-    
-    pr_info("RELM: Guest page tables created - CR3 = 0x%llx\n", vcpu->cr3);
-    
-    return 0;
-}
 struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
 {
     if(!vm)
@@ -1063,6 +989,9 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
     /*default architectural state */ 
     vcpu->regs.rflags = 0x2; 
     vcpu->regs.rip = 0x0; 
+
+    /*cr3 points to guest page tables */
+    vcpu->cr3 = vm->pml4_gpa;
 
     PDEBUG("RELM: Initializing spinlock and waitqueue\n");
     /* Initialize spinlock */
@@ -1179,12 +1108,6 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
     {
         pr_err("Failed to setup MSR areas\n"); 
         goto _out_free_msr_bitmap; 
-    }
-
-    PDEBUG("RELM: Creating guest page tables\n");
-    if (relm_create_guest_page_tables(vcpu) != 0) {
-        pr_err("RELM: Failed to create guest page tables\n");
-        goto _out_free_msr_areas;
     }
 
     PDEBUG("RELM: VCPU allocation and initialization complete\n");
@@ -1437,9 +1360,7 @@ int relm_init_vmcs_state(struct vcpu *vcpu)
     }
 
     return 0; 
-
 }
-
 
 void relm_dump_vcpu(struct vcpu *vcpu)
 {
@@ -1486,7 +1407,7 @@ void relm_dump_vcpu(struct vcpu *vcpu)
             (unsigned long)__vmread(GUEST_SYSENTER_CS), 
             (unsigned long)(__vmread(GUEST_SYSENTER_EIP) & 0xFFFFFFFF)); 
 
-    /*
+    
    
     pr_info("\n*** Host State ***\n\n");
 
@@ -1524,17 +1445,17 @@ void relm_dump_vcpu(struct vcpu *vcpu)
         (u32)__vmread(HOST_SYSENTER_EIP));
 
     if (__vmread(VMCS_EXIT_CONTROLS) &
-        (VMCS_EXIT_LOAD_HOST_EFER | VMCS_EXIT_LOAD_HOST_PAT)) {
+        (VMCS_EXIT_LOAD_EFER | VMCS_EXIT_LOAD_IA32_PAT)) {
         pr_info("EFER=0x%016llx PAT=0x%016llx\n",
-            __vmread(HOST_EFER),
-            __vmread(HOST_PAT));
+            __vmread(HOST_IA32_EFER),
+            __vmread(HOST_IA32_PAT));
     }
 
-    if (__vmread(VM_EXIT_CONTROLS) &
+    if (__vmread(VMCS_EXIT_CONTROLS) &
         VM_EXIT_LOAD_PERF_GLOBAL_CTRL){
         pr_info("PerfGlobalCtrl=0x%016llx\n",
-            __vmread(HOST_PERF_GLOBAL_CTRL));
+            __vmread(HOST_IA32_PERF_GLOBAL_CTRL));
     }
-    */ 
+    
  
 }

@@ -41,6 +41,9 @@
 #define HOST_IA32_EFER					0x00002c02
 #define HOST_IA32_PERF_GLOBAL_CTRL		0x00002c04
 
+#define HOST_EFER                       0x00002c02
+#define HOST_PAT                        0x00002c00
+
 #define GUEST_ES_SELECTOR				0x00000800
 #define GUEST_CS_SELECTOR				0x00000802
 #define GUEST_SS_SELECTOR				0x00000804

@@ -51,6 +51,9 @@ struct relm_vm
     struct ept_context *ept; 
     uint64_t total_guest_ram; 
 
+    /*for guest page tables */ 
+    uint64_t pml4_gpa; 
+
     int max_vcpus;
     int online_vcpus;
     struct vcpu **vcpus; 
@@ -79,6 +82,7 @@ void relm_vm_free_guest_memory(struct relm_vm *vm);
 int relm_vm_copy_to_guest(struct relm_vm *vm, uint64_t gpa, const void *data, size_t size);
 int relm_vm_copy_from_guest(struct relm_vm *vm, uint64_t gpa, const void *data, size_t size);
 int relm_vm_zero_guest_memory(struct relm_vm *vm, uint64_t gpa, size_t size); 
+int relm_vm_create_guest_page_tables(struct relm_vm *vm);
 int relm_run_vm(struct relm_vm *vm);
 int relm_stop_vm(struct relm_vm *vm);
 

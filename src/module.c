@@ -50,38 +50,37 @@ static int __init relm_module_init(void)
         pr_err("RELM: Failed to add VCPU with VPID %d (error: %d)\n", 
                vpid, ret);
         return -1; 
- //       goto _cleanup_vm;
+  //      goto _cleanup_vm;
     }
     
     pr_info("RELM: VCPU %d added successfully, starting VM...\n", vpid);
-    /*
-
+    
+/*
     ret = relm_run_vm(my_vm);
     if (ret != 0)
     {
         pr_err("RELM: Failed to run VM (error: %d)\n", ret);
         goto _cleanup_vm;
     }
+    */ 
     
     pr_info("RELM: VM is now running!\n");
     pr_info("RELM: Module initialization complete\n");
-  */   
+     
     return 0;
+
 /*
 _cleanup_vm:
     pr_err("RELM: Cleaning up VM due to initialization failure\n");
     relm_destroy_vm(my_vm);
     my_vm = NULL;
-    return ret;
-
-    
-    return 0;  
-    */ 
+     return ret;
+*/ 
 }
 
 static void __exit relm_module_exit(void)
 {
-    /*
+    
     pr_info("RELM: Shutting down hypervisor...\n");
 
     if(my_vm)
@@ -99,7 +98,7 @@ static void __exit relm_module_exit(void)
     else{
         pr_info("RELM: No VM to clean\n"); 
     }
-    */ 
+     
 
     pr_info("RELM: Module unloaded succesffully\n"); 
 }

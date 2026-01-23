@@ -16,7 +16,7 @@
 #define MSR_IA32_FEATURE_CONTROL                          0x0000003A 
 #define IA32_FEATURE_CONTROL_LOCKED                       (1 << 0)
 #define IA32_FEATURE_CONTROL_MSR_VMXON_ENABLE_OUTSIDE_SMX (1 << 2)
-
+#define VM_EXIT_LOAD_PERF_GLOBAL_CTRL   (1u << 12)
 /* * VMCS Field Encodings
  * These are the hex codes used with __vmread() and __vmwrite()
  */

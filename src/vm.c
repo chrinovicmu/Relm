@@ -273,7 +273,17 @@ struct relm_vm * relm_create_vm(int vm_id, const char *vm_name,
             goto _out_free_ept;
             return NULL; 
         }
-        pr_info("RELM: Allocated %llu MB guest RAM\n", ram_size >> 20);
+        PDEBUG("RELM: Allocated %llu MB guest RAM\n", ram_size >> 20);
+
+        ret = relm_vm_create_guest_page_tables(vm); 
+        if(ret < 0)
+        {
+            pr_err("Failed to create map Guest page tables to EPT\n"); 
+            goto _out_free_ept; 
+            return NULL; 
+        }
+        PDEBUG("RELM: Guest page tables created and mapped to EPT: Guest PML4_GPA=0x%llu\n",
+               vm->pml4_gpa); 
     }
 
     vm->vcpus = kcalloc(vm->max_vcpus, sizeof(struct vcpu*), GFP_KERNEL);
@@ -627,6 +637,80 @@ int relm_vm_zero_guest_memory(struct relm_vm *vm, uint64_t gpa, size_t size)
     return (int)zeroed;
 }
 
+int relm_vm_create_guest_page_tables(struct relm_vm *vm)
+{
+    uint64_t *pml4;      // Page Map Level 4 (top level)
+    uint64_t *pdpt;      // Page Directory Pointer Table
+    uint64_t *pd;        // Page Directory
+    uint64_t pml4_gpa, pdpt_gpa, pd_gpa;
+    uint64_t pml4_hpa, pdpt_hpa, pd_hpa;
+    int i;
+
+    if (!vm || !vm->ept)
+        return -EINVAL;
+
+    // Allocate 3 pages for page tables (PML4, PDPT, PD)
+    // We allocate from guest RAM at a high address to avoid conflicts
+    
+    // Put page tables at the end of guest RAM
+    uint64_t pt_base_gpa = vm->total_guest_ram - (3 * PAGE_SIZE);
+    
+    pr_info("RELM: Creating guest page tables at GPA 0x%llx\n", pt_base_gpa);
+    
+    // Map the page table pages in EPT so we can write to them
+    struct page *pml4_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
+    struct page *pdpt_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
+    struct page *pd_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
+    
+    if (!pml4_page || !pdpt_page || !pd_page) {
+        if (pml4_page) __free_page(pml4_page);
+        if (pdpt_page) __free_page(pdpt_page);
+        if (pd_page) __free_page(pd_page);
+        return -ENOMEM;
+    }
+    
+    // Get physical addresses
+    pml4_hpa = PFN_PHYS(page_to_pfn(pml4_page));
+    pdpt_hpa = PFN_PHYS(page_to_pfn(pdpt_page));
+    pd_hpa = PFN_PHYS(page_to_pfn(pd_page));
+    
+    // Guest physical addresses (where guest will see them)
+    pml4_gpa = pt_base_gpa;
+    pdpt_gpa = pt_base_gpa + PAGE_SIZE;
+    pd_gpa = pt_base_gpa + (2 * PAGE_SIZE);
+    
+    // Map them in EPT
+    relm_ept_map_page(vm->ept, pml4_gpa, pml4_hpa, EPT_RWX);
+    relm_ept_map_page(vm->ept, pdpt_gpa, pdpt_hpa, EPT_RWX);
+    relm_ept_map_page(vm->ept, pd_gpa, pd_hpa, EPT_RWX);
+    
+    // Get virtual addresses so we can write to them
+    pml4 = page_address(pml4_page);
+    pdpt = page_address(pdpt_page);
+    pd = page_address(pd_page);
+    
+    // Build page table hierarchy
+    // PML4[0] → PDPT
+    pml4[0] = pdpt_gpa | 0x7;  // Present, R/W, User
+    
+    // PDPT[0] → PD
+    pdpt[0] = pd_gpa | 0x7;    // Present, R/W, User
+    
+    // PD entries: Identity map first 1GB using 2MB pages
+    // Each PD entry covers 2MB
+    for (i = 0; i < 512; i++) {
+        // 2MB page at physical address (i * 2MB)
+        // Bit 7 (PS) = 1 for 2MB pages
+        pd[i] = (i * 0x200000ULL) | 0x87;  // Present, R/W, User, PS
+    }
+    
+    // Set guest CR3 to point to PML4
+    vm->pml4_gpa = pml4_gpa;
+    
+    pr_info("RELM: Guest page tables created - PML4_GPA = 0x%llx\n", pml4_gpa);
+    
+    return 0;
+}
 /**
  * relm_vm_add_vcpu - Creates and pins a VCPU to a specific host CPU.
  * @vm: The parent virtual machine struct.
@@ -709,6 +793,7 @@ struct vcpu *relm_vm_get_vcpu(struct relm_vm *vm, uint16_t vpid)
  * enters the guest runtil told to stop */
 static int relm_vcpu_loop(void *data)
 {
+     
     struct vcpu *vcpu = (struct vcpu*)data;
     int ret;
     uint64_t error; 
@@ -716,9 +801,9 @@ static int relm_vcpu_loop(void *data)
     pr_info("RELM: VCPU %d thread starting on CPU %d\n",
             vcpu->vpid, smp_processor_id());
 
-    relm_set_current_vcpu(vcpu); 
 
-    /*secure context: pin to specific CPU assigned during 'add_cpu' */
+    relm_set_current_vcpu(vcpu); 
+/*
     ret = relm_vcpu_pin_to_cpu(vcpu, vcpu->target_cpu_id);
     if(ret < 0)
     {
@@ -726,7 +811,7 @@ static int relm_vcpu_loop(void *data)
                vcpu->vpid, vcpu->target_cpu_id);
         goto _out_clear_vcpu; 
     }
-
+/*
     ret = relm_init_vmcs_state(vcpu);
     if(ret < 0)
     {
@@ -741,7 +826,6 @@ static int relm_vcpu_loop(void *data)
     {
         ret = relm_vmentry_asm(&vcpu->regs, vcpu->launched);
 
-        /*we only reach here if VMLAUNCH/VMRESUME fails */
         pr_err("RELM: [VPID=%u] VM-%s FAILED!\n",
                vcpu->vpid, vcpu->launched ? "RESUME" : "LAUNCH");
        
@@ -764,11 +848,13 @@ static int relm_vcpu_loop(void *data)
         vcpu->state = VCPU_STATE_ERROR; 
         break;
     }
+*/ 
 
     pr_info("RELM: [VPID=%u] Execution loop exiting\n", vcpu->vpid);
-    PDEBUG("RELM: [VPID=%u] Total VM-exits handled: %llu\n",
-            vcpu->vpid, vcpu->stats.total_exits);
+  //  PDEBUG("RELM: [VPID=%u] Total VM-exits handled: %llu\n",
+    //        vcpu->vpid, vcpu->stats.total_exits);
 
+/* 
 _out_vmclear:
     __vmclear(vcpu->vmcs_pa); 
 _out_clear_vcpu: 
@@ -777,7 +863,9 @@ _out_clear_vcpu:
 
     relm_set_current_vcpu(NULL);
     PDEBUG("RELM: [VPID=%u] Thread exiting\n", vcpu->vpid);
-    return ret; ;
+
+    */
+    return ret; 
 }
 
 int relm_run_vcpu(struct relm_vm *vm, uint64_t vpid)
@@ -826,6 +914,8 @@ int relm_run_vcpu(struct relm_vm *vm, uint64_t vpid)
     }
 
     wake_up_process(vcpu->host_task);
+
+
     pr_info("RELM: VCPU VPID=%u thread started\n", (uint32_t)vpid);
 
     return 0;
@@ -929,7 +1019,7 @@ int relm_run_vm(struct relm_vm *vm)
             pr_err("RELM: Failed to start VCPU VPID=%u: %d\n", 
                    vcpu->vpid, ret); 
 
-            goto _stop_all_vcpus; 
+//            goto _stop_all_vcpus; 
         }
 
         started_vcpus++; 
@@ -947,7 +1037,7 @@ int relm_run_vm(struct relm_vm *vm)
             vm->vm_name, started_vcpus, vm->online_vcpus);
 
     return 0;
-
+/*
 _stop_all_vcpus:
 
     pr_err("RELM: Stopping all VCPUs due to launch failure\n");
@@ -968,6 +1058,7 @@ _stop_all_vcpus:
     spin_unlock(&vm->lock);
 
     return ret;
+    */ 
 }
 
 int relm_stop_vm(struct relm_vm *vm)
