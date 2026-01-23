@@ -254,11 +254,13 @@ static int relm_vmxon(struct host_cpu *hcpu)
     if(rflags & X86_EFLAGS_CF)
     {
         pr_err("RELM: VMXON failed - VMfailInvalid (CF=1)\n"); 
+        pr_err("RELM: VMXON INSTRUCTION ERROR: %d\n", __vmread(VMCS_INSTRUCTION_ERROR_FIELD)); 
         return -EIO; 
     }
     if(rflags & X86_EFLAGS_ZF)
     {   
         pr_err("RELM: VMXON failed - VMfailValid (ZF=1)\n"); 
+        pr_err("RELM: VMXON INSTRUCTION ERROR: %d\n", __vmread(VMCS_INSTRUCTION_ERROR_FIELD)); 
         return -EIO; 
     }
     
@@ -1022,8 +1024,12 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
     PDEBUG("RELM: Host stack allocated at %p\n", vcpu->host_stack);
 
     /*point to top of host stack */ 
-    vcpu->host_rsp =
-        (uint64_t)vcpu->host_stack + (PAGE_SIZE << HOST_STACK_ORDER); 
+    uint64_t top = (uint64_t)vcpu->host_stack + (PAGE_SIZE << HOST_STACK_ORDER); 
+    top -= ~0x100; 
+    top &= ~0xFULL; 
+
+    vcpu->host_rsp = top; 
+
     PDEBUG("RELM: Host RSP set to 0x%llx\n", vcpu->host_rsp);
 
     PDEBUG("RELM: Setting up VMCS region\n");
@@ -1245,7 +1251,7 @@ static int relm_setup_host_state(struct vcpu *vcpu)
             (gdt_desc[index].base1 << 16) |
             (gdt_desc[index].base2 << 24); 
     
-        #ifndef CONFIG_X86_64
+        #ifdef CONFIG_X86_64
         /*for 64 bit TSS descriptor is 16 bytes*/  
         if(index + 1 < (gdt.size + 1) / 8)
         {
@@ -1329,6 +1335,19 @@ static int relm_setup_guest_state(struct vcpu *vcpu)
     CHECK_VMWRITE(GUEST_ES_AR_BYTES, 0xC093);
     CHECK_VMWRITE(GUEST_SS_AR_BYTES, 0xC093);
 
+    CHECK_VMWRITE(GUEST_FS_AR_BYTES, 0x10000);  // Unusable
+    CHECK_VMWRITE(GUEST_GS_AR_BYTES, 0x10000);  // Unusable
+
+    CHECK_VMWRITE(GUEST_LDTR_SELECTOR, 0);
+    CHECK_VMWRITE(GUEST_LDTR_BASE, 0);
+    CHECK_VMWRITE(GUEST_LDTR_LIMIT, 0);
+    CHECK_VMWRITE(GUEST_LDTR_AR_BYTES, 0x10000); 
+    
+    CHECK_VMWRITE(GUEST_TR_SELECTOR, 0);
+    CHECK_VMWRITE(GUEST_TR_BASE, 0);
+    CHECK_VMWRITE(GUEST_TR_LIMIT, 0x67);  // Minimum TSS size
+    CHECK_VMWRITE(GUEST_TR_AR_BYTES, 0x008B);  // Present, Type=TSS Busy
+    
     /* GDTR / IDTR */
     CHECK_VMWRITE(GUEST_GDTR_BASE, vcpu->gdtr_base);
     CHECK_VMWRITE(GUEST_GDTR_LIMIT, vcpu->gdtr_limit);
@@ -1338,6 +1357,10 @@ static int relm_setup_guest_state(struct vcpu *vcpu)
     /* MSRs */
     CHECK_VMWRITE(GUEST_IA32_EFER, vcpu->efer);
 
+    CHECK_VMWRITE(GUEST_ACTIVITY_STATE, 0); 
+    CHECK_VMWRITE(GUEST_INTERRUPTIBILITY_INFO, 0); 
+    CHECK_VMWRITE(GUEST_PENDING_DBG_EXCEPTIONS, 0);
+    CHECK_VMWRITE(VMCS_LINK_POINTER, 0xFFFFFFFFFFFFFFFFULL);
     return 0; 
 }
 

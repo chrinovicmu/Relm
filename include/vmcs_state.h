@@ -89,6 +89,10 @@
 #define GUEST_SYSENTER_ESP				0x00006824
 #define GUEST_SYSENTER_EIP				0x00006826
 
+/* Guest-state area fields */
+#define GUEST_INTERRUPTIBILITY_INFO     0x00004824
+#define GUEST_PENDING_DBG_EXCEPTIONS    0x00006822
+
 #define GUEST_PDPTE0                    0X0000280a 
 #define GUEST_PDPTE(n)  (GUEST_PDPTE0 + (n) * 2)
 /*guest non-register state */ 

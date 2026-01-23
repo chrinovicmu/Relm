@@ -803,25 +803,29 @@ static int relm_vcpu_loop(void *data)
 
 
     relm_set_current_vcpu(vcpu); 
-/*
+
+    PDEBUG("-------------------------------------------------"); 
+
     ret = relm_vcpu_pin_to_cpu(vcpu, vcpu->target_cpu_id);
     if(ret < 0)
     {
         pr_err("RELM: Failed to pin VCPU %u to CPU %d\n",
                vcpu->vpid, vcpu->target_cpu_id);
-        goto _out_clear_vcpu; 
+        return -1; 
+//        goto _out_clear_vcpu; 
     }
-/*
+ 
     ret = relm_init_vmcs_state(vcpu);
     if(ret < 0)
     {
         pr_err("RELM: Failed to initialize VMCS state\n");
-        goto _out_vmclear; 
+//        goto _out_vmclear; 
+        return -1; 
     }
 
     vcpu->state = VCPU_STATE_RUNNING;
     pr_info("RELM: VCPU %d entering execution loop\n", vcpu->vpid);
-
+/*
     while(!kthread_should_stop())
     {
         ret = relm_vmentry_asm(&vcpu->regs, vcpu->launched);
