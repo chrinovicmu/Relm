@@ -639,9 +639,9 @@ int relm_vm_zero_guest_memory(struct relm_vm *vm, uint64_t gpa, size_t size)
 
 int relm_vm_create_guest_page_tables(struct relm_vm *vm)
 {
-    uint64_t *pml4;      // Page Map Level 4 (top level)
-    uint64_t *pdpt;      // Page Directory Pointer Table
-    uint64_t *pd;        // Page Directory
+    uint64_t *pml4; 
+    uint64_t *pdpt;      
+    uint64_t *pd;       
     uint64_t pml4_gpa, pdpt_gpa, pd_gpa;
     uint64_t pml4_hpa, pdpt_hpa, pd_hpa;
     int i;
@@ -649,15 +649,13 @@ int relm_vm_create_guest_page_tables(struct relm_vm *vm)
     if (!vm || !vm->ept)
         return -EINVAL;
 
-    // Allocate 3 pages for page tables (PML4, PDPT, PD)
-    // We allocate from guest RAM at a high address to avoid conflicts
+    /* allocate 3 pages for page tables (PML4, PDPT, PD)
+    * from guest RAM at a high address to avoid conflicts */ 
     
-    // Put page tables at the end of guest RAM
     uint64_t pt_base_gpa = vm->total_guest_ram - (3 * PAGE_SIZE);
     
     pr_info("RELM: Creating guest page tables at GPA 0x%llx\n", pt_base_gpa);
     
-    // Map the page table pages in EPT so we can write to them
     struct page *pml4_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
     struct page *pdpt_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
     struct page *pd_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
@@ -669,42 +667,36 @@ int relm_vm_create_guest_page_tables(struct relm_vm *vm)
         return -ENOMEM;
     }
     
-    // Get physical addresses
     pml4_hpa = PFN_PHYS(page_to_pfn(pml4_page));
     pdpt_hpa = PFN_PHYS(page_to_pfn(pdpt_page));
     pd_hpa = PFN_PHYS(page_to_pfn(pd_page));
     
-    // Guest physical addresses (where guest will see them)
     pml4_gpa = pt_base_gpa;
     pdpt_gpa = pt_base_gpa + PAGE_SIZE;
     pd_gpa = pt_base_gpa + (2 * PAGE_SIZE);
     
-    // Map them in EPT
+    /* map them in EPT */ 
     relm_ept_map_page(vm->ept, pml4_gpa, pml4_hpa, EPT_RWX);
     relm_ept_map_page(vm->ept, pdpt_gpa, pdpt_hpa, EPT_RWX);
     relm_ept_map_page(vm->ept, pd_gpa, pd_hpa, EPT_RWX);
     
-    // Get virtual addresses so we can write to them
     pml4 = page_address(pml4_page);
     pdpt = page_address(pdpt_page);
     pd = page_address(pd_page);
     
-    // Build page table hierarchy
-    // PML4[0] → PDPT
+    // PML4[0] ->  PDPT
     pml4[0] = pdpt_gpa | 0x7;  // Present, R/W, User
     
-    // PDPT[0] → PD
-    pdpt[0] = pd_gpa | 0x7;    // Present, R/W, User
+    // PDPT[0] -> PD
+    pdpt[0] = pd_gpa | 0x7; 
     
-    // PD entries: Identity map first 1GB using 2MB pages
-    // Each PD entry covers 2MB
+    /* PD entries: Identity map first 1GB using 2MB pages
+    *each PD entry covers 2MB */ 
     for (i = 0; i < 512; i++) {
-        // 2MB page at physical address (i * 2MB)
         // Bit 7 (PS) = 1 for 2MB pages
         pd[i] = (i * 0x200000ULL) | 0x87;  // Present, R/W, User, PS
     }
     
-    // Set guest CR3 to point to PML4
     vm->pml4_gpa = pml4_gpa;
     
     pr_info("RELM: Guest page tables created - PML4_GPA = 0x%llx\n", pml4_gpa);
