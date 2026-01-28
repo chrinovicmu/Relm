@@ -9,9 +9,16 @@
 #include <include/vmx_ops.h>
 #include <include/vmexit.h>
 #include <include/vmcs_state.h>
+#include <stdint.h>
 #include <utils/utils.h>
 
 static struct relm_vm *my_vm = NULL; 
+
+static uint8_t guest_code[] = {
+    0xb8, 0x01, 0x00, 0x00, 0x00,   // mov eax, 1 
+    0xcd, 0x80.                     // int 0x80 
+    0xf4;                           // hlt
+}; 
 
 static int __init relm_module_init(void)
 {
@@ -43,38 +50,52 @@ static int __init relm_module_init(void)
     }
 
     pr_info("VM created!!!\n");
-
+    
     ret = relm_vm_add_vcpu(my_vm, vpid);
     if (ret != 0) 
     {
         pr_err("RELM: Failed to add VCPU with VPID %d (error: %d)\n", 
                vpid, ret);
         return -1; 
-  //      goto _cleanup_vm;
+      goto _cleanup_vm;
     }
     
     pr_info("RELM: VCPU %d added successfully, starting VM...\n", vpid);
+
+    /*load guest code into VM memory
+     * copy to guest physicall address 0x1000
+     * we use 0x100(4kb) to leave the first page for the real-mode IVT/BIOS data
+     */ 
+
+    PDEBUG("RELM: Loading guest code (%zu bytes) to GPA 0x1000...\n", 
+           sizeof(guest_code));  
     
+    ret = relm_vm_copy_to_guest(my_vm, 0x1000, guest_code, sizeof(guest_code)); 
+    if(ret < 0)
+    {
+        pr_err("RELM: Failed to load guest code: %d\n", ret); 
+        goto _cleanup_vm; 
+    }
+
+    PDEBUG("RELM: Guest code loaded successfully (%d bytes copied)\n", ret); 
+
     ret = relm_run_vm(my_vm);
     if (ret != 0)
     {
         pr_err("RELM: Failed to run VM (error: %d)\n", ret);
-        //goto _cleanup_vm;
+        goto _cleanup_vm;
     }
-
-    
+ 
     pr_info("RELM: VM is now running!\n");
     pr_info("RELM: Module initialization complete\n");
      
     return 0;
 
-/*
 _cleanup_vm:
     pr_err("RELM: Cleaning up VM due to initialization failure\n");
     relm_destroy_vm(my_vm);
     my_vm = NULL;
-     return ret;
-*/ 
+    return ret; 
 }
 
 static void __exit relm_module_exit(void)
