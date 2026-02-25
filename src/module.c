@@ -9,15 +9,14 @@
 #include <include/vmx_ops.h>
 #include <include/vmexit.h>
 #include <include/vmcs_state.h>
-#include <stdint.h>
 #include <utils/utils.h>
 
 static struct relm_vm *my_vm = NULL; 
 
 static uint8_t guest_code[] = {
     0xb8, 0x01, 0x00, 0x00, 0x00,   // mov eax, 1 
-    0xcd, 0x80.                     // int 0x80 
-    0xf4;                           // hlt
+    0xcd, 0x80,                     // int 0x80 
+    0xf4,                          // hlt
 }; 
 
 static int __init relm_module_init(void)
@@ -69,7 +68,8 @@ static int __init relm_module_init(void)
 
     PDEBUG("RELM: Loading guest code (%zu bytes) to GPA 0x1000...\n", 
            sizeof(guest_code));  
-    
+ 
+    /*
     ret = relm_vm_copy_to_guest(my_vm, 0x1000, guest_code, sizeof(guest_code)); 
     if(ret < 0)
     {
@@ -78,7 +78,7 @@ static int __init relm_module_init(void)
     }
 
     PDEBUG("RELM: Guest code loaded successfully (%d bytes copied)\n", ret); 
-
+ 
     ret = relm_run_vm(my_vm);
     if (ret != 0)
     {
@@ -88,7 +88,7 @@ static int __init relm_module_init(void)
  
     pr_info("RELM: VM is now running!\n");
     pr_info("RELM: Module initialization complete\n");
-     
+*/       
     return 0;
 
 _cleanup_vm:

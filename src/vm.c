@@ -660,7 +660,7 @@ int relm_vm_create_guest_page_tables(struct relm_vm *vm)
     struct page *pdpt_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
     struct page *pd_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
     
-    if (!pml4_page || !pdpt_page || !pd_page) {
+    if (!pml4_page || !pdpt_page || !pd_page){
         if (pml4_page) __free_page(pml4_page);
         if (pdpt_page) __free_page(pdpt_page);
         if (pd_page) __free_page(pd_page);
@@ -989,7 +989,7 @@ int relm_run_vm(struct relm_vm *vm)
     vm->state = VM_STATE_RUNNING;
     spin_unlock(&vm->lock);
 
-
+/*
     for(i = 0; i < vm->max_vcpus; i++)
     {
         vcpu = vm->vcpus[i]; 
@@ -1020,6 +1020,7 @@ int relm_run_vm(struct relm_vm *vm)
 
         started_vcpus++; 
     }
+    */ 
 
     if (started_vcpus == 0) 
     {
