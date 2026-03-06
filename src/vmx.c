@@ -274,6 +274,34 @@ int relm_enable_vmx_on_all_cpus(void)
 
     return 0; 
 
+_cleanup:
+
+    relm_vmx_disable_vmx_on_all_cpus(); 
+    return ret; 
+}
+
+void relm_vmx_disable_vmx_on_all_cpus(void)
+{
+    int cpu; 
+    struct host_cpu *hcpu; 
+
+    pr_info("RELM: Disablingi VMX on all CPUs"); 
+
+    on_each_cpu(relm_vmx_disable_cpu, NULL, 1); 
+
+    for_each_online_cpu(cpu)
+    {
+        hcpu = per_cpu(relm_per_cpu_hcpu, cpu); 
+        if(!hcpu)
+            continue; 
+
+        relm_free_vmxon_region(hcpu); 
+        kfree(hcpu); 
+        per_cpu(relm_per_cpu_hcpu, cpu) = NULL; 
+    }
+
+    pr_info("RELM: VMX disabled on all CPUs\n"); 
+
 }
 
 /*pin vcpu thread to a specific physical host cpu for cpu affinity
@@ -347,7 +375,9 @@ static int relm_setup_vmxon_region(struct host_cpu *hcpu)
         return -EINVAL; 
 
     /*allocate one page, page-aligned, zeroed */ 
-    hcpu->vmxon = (struct vmxon_region *)__get_free_page(GFP_KERNEL | __GFP_ZERO); 
+    hcpu->vmxon = (struct vmxon_region *)
+        __get_free_page(GFP_KERNEL | __GFP_ZERO); 
+
     if(!hcpu->vmxon)
         return -ENOMEM; 
 
@@ -378,20 +408,17 @@ static int relm_vmxon(struct host_cpu *hcpu)
         : "cc", "memory"            
     );
 
-    if(rflags & X86_EFLAGS_CF)
-    {
-        pr_err("RELM: VMXON failed - VMfailInvalid (CF=1)\n"); 
-        pr_err("RELM: VMXON INSTRUCTION ERROR: %d\n", __vmread(VMCS_INSTRUCTION_ERROR_FIELD)); 
-        return -EIO; 
+    if (rflags & X86_EFLAGS_CF) {
+        pr_err("RELM: VMXON failed - VMfailInvalid (CF=1), error: %d\n",
+               __vmread(VMCS_INSTRUCTION_ERROR_FIELD));
+        return -EIO;
     }
-    if(rflags & X86_EFLAGS_ZF)
-    {   
-        pr_err("RELM: VMXON failed - VMfailValid (ZF=1)\n"); 
-        pr_err("RELM: VMXON INSTRUCTION ERROR: %d\n", __vmread(VMCS_INSTRUCTION_ERROR_FIELD)); 
-        return -EIO; 
+    if (rflags & X86_EFLAGS_ZF) {
+        pr_err("RELM: VMXON failed - VMfailValid (ZF=1), error: %d\n",
+               __vmread(VMCS_INSTRUCTION_ERROR_FIELD));
+        return -EIO;
     }
-    
-    pr_info("RELM: VMXON successful, CPU in VMX root operation\n"); 
+
     return 0; 
 }
 
@@ -473,8 +500,9 @@ int relm_vmclear(struct vcpu *vcpu)
         pr_err("RELM: VMCLEAR failed - VMfailValid\n");
         return -EIO;
     }
-    
-    pr_info("RELM: VMCLEAR successful for VMCS at PA 0x%llx\n", vcpu->vmcs_pa);
+
+    PDEBUG("RELM: VCPU%d VMCLEAR ok (PA=0x%llx)\n", vcpu->vpid, vcpu->vmcs_pa);
+
     return 0;
 }
 
@@ -507,10 +535,13 @@ int relm_vmptrld(struct vcpu *vcpu)
         pr_err("RELM: VMPTRLD failed - VMfailValid\n");
         return -EIO;
     }
+
+    PDEBUG("RELM: VCPU%d VMPTRLD ok (PA=0x%llx)\n", vcpu->vpid, vcpu->vmcs_pa);
     
-    pr_info("RELM: VMPTRLD successful, VMCS at PA 0x%llx is now current\n", vcpu->vmcs_pa);
     return 0;
 }
+
+/*
 static struct host_cpu * relm_host_cpu_create(int logical_cpu_id)
 {
     struct host_cpu * hcpu;
@@ -554,7 +585,7 @@ static void relm_destroy_host_cpu(struct host_cpu *hcpu)
         hcpu = NULL; 
     }
 }
-
+*/ 
 static int relm_setup_cr_controls(struct vcpu *vcpu)
 {
     if(!vcpu)
@@ -1098,7 +1129,6 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
         return ERR_PTR(-EINVAL); 
 
     struct vcpu *vcpu;
-    struct host_cpu *hcpu; 
     int ret; 
 
     PDEBUG("RELM: Allocating zeroed VCPU struct\n");
@@ -1114,6 +1144,7 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
     vcpu->vpid = vpid;
     vcpu->state = VCPU_STATE_UNINITIALIZED; 
     vcpu->halted = false; 
+    vcpu->launched = 0; 
 
     /*default architectural state */ 
     vcpu->regs.rflags = 0x2; 
@@ -1122,21 +1153,9 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
     /*cr3 points to guest page tables */
     vcpu->cr3 = vm->pml4_gpa;
 
-    PDEBUG("RELM: Initializing spinlock and waitqueue\n");
-    /* Initialize spinlock */
     spin_lock_init(&vcpu->lock);
     init_waitqueue_head(&vcpu->wq); 
 
-    PDEBUG("RELM: Allocating host CPU structure\n");
-    hcpu = relm_host_cpu_create(HOST_CPU_ID); 
-    if(IS_ERR_OR_NULL(hcpu)) {
-        PDEBUG("RELM: Failed to create host CPU\n");
-        goto _out_free_vcpu; 
-    }
-    PDEBUG("RELM: Host CPU allocated: hcpu=%p\n", hcpu);
-
-    vcpu->hcpu = hcpu; 
-    vcpu->target_cpu_id = hcpu->logical_cpu_id; 
 
     PDEBUG("RELM: Allocating vCPU host stack\n");
     /*alllocate vCPU stack */ 
@@ -1145,18 +1164,17 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
         HOST_STACK_ORDER
     ); 
     if(!vcpu->host_stack) {
-        PDEBUG("RELM: Failed to allocate host stack\n");
-        goto _out_free_host_cpu; 
+        pr_err("RELM: Failed to allocate host stack for VCPU%d\n", vpid);
+        goto _out_free_vcpu;
     }
     PDEBUG("RELM: Host stack allocated at %p\n", vcpu->host_stack);
 
-    /*point to top of host stack */ 
-    uint64_t top = (uint64_t)vcpu->host_stack + (PAGE_SIZE << HOST_STACK_ORDER); 
-    top -= ~0x100; 
-    top &= ~0xFULL; 
-
-    vcpu->host_rsp = top; 
-
+    /*point to top of host stack 
+     * point to near top of the stack 
+     * leave 0x100 bytes for red zone , then 16-byte align*/ 
+    vcpu->host_rsp = ((uint64_t)vcpu->host_stack + HOST_STACK_SIZE - 0x100)
+                    & ~0xFULL; 
+     
     PDEBUG("RELM: Host RSP set to 0x%llx\n", vcpu->host_rsp);
 
     PDEBUG("RELM: Setting up VMCS region\n");

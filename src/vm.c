@@ -13,6 +13,7 @@
 #include <include/vmx_ops.h>
 #include <include/vmexit.h>
 #include <include/vmcs_state.h>
+#include <string.h>
 #include <utils/utils.h>
 
 DEFINE_PER_CPU(struct vcpu *, current_vcpu);
@@ -356,7 +357,7 @@ void relm_destroy_vm(struct relm_vm *vm)
 int relm_vm_copy_to_guest(struct relm_vm *vm, uint64_t gpa,
                          const void *data, size_t size)
 {
-    struct guest_mem_region *region;
+    struct guest_mem_region *region = NULL;
     uint64_t region_offset;
     uint64_t page_index;
     uint64_t page_offset;
@@ -369,9 +370,11 @@ int relm_vm_copy_to_guest(struct relm_vm *vm, uint64_t gpa,
     struct page *page; 
 
     if(!vm || !data || size == 0)
+    {
         pr_err("RELM: Invalid parameters to copy_to_guest\n"); 
         return -EINVAL;
-    
+    }
+
     current_gpa = gpa;
 
     pr_info("RELM: Copying %zu bytes to guest at GPA 0x%llx\n", 
@@ -470,9 +473,9 @@ int relm_vm_copy_to_guest(struct relm_vm *vm, uint64_t gpa,
 
 /*copy data from guest phsyical memory to host */ 
 int relm_vm_copy_from_guest(struct relm_vm *vm, const uint64_t gpa,
-                            const void *data, size_t size)
+                            void *data, size_t size)
 {
-    struct guest_mem_region *region; 
+    struct guest_mem_region *region = NULL; 
     uint64_t region_offset; 
     uint64_t page_index; 
     uint64_t page_offset; 
