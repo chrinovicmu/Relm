@@ -23,12 +23,14 @@
 #include <include/vmcs_state.h>
 #include <utils/utils.h>
 
-static DEFINE_PER_CPU(struct host_cpu * relm_per_cpu_hcpu); 
+static DEFINE_PER_CPU(struct host_cpu *, relm_per_cpu_hcpu); 
 struct host_cpu *relm_get_per_cpu_hcpu(void)
 {
     return this_cpu_read(relm_per_cpu_hcpu); 
 }
 
+static int relm_vmxon(struct host_cpu *hcpu);
+static int relm_vmxoff(struct host_cpu *hcpu);
 static int relm_setup_vmxon_region(struct host_cpu *hcpu);
 static int relm_setup_vmcs_region(struct vcpu *vcpu);
 static int relm_setup_io_bitmap(struct vcpu *vcpu);
@@ -232,7 +234,7 @@ int relm_vmx_enable_on_all_cpus(void)
     pr_info("RELM: Enabling VMX on all %d online CPUs\n",
             num_online_cpus());
 
-    for_each_online(cpu){
+    for_each_online_cpu(cpu){
 
         hcpu = kzalloc(sizeof(*hcpu), GFP_KERNEL);
         if(!hcpu)
@@ -1338,7 +1340,6 @@ void relm_free_vcpu(struct vcpu *vcpu)
     relm_free_io_bitmap(vcpu);
     relm_free_msr_bitmap(vcpu);
     relm_free_vmcs_region(vcpu);
-    relm_destroy_host_cpu(vcpu->hcpu); 
     kfree(vcpu);
 }
 
