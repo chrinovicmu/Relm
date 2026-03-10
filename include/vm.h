@@ -75,15 +75,23 @@ struct relm_vm_operations{
 
 struct relm_vm * relm_create_vm(int vm_id, const char *name, uint64_t ram_size); 
 void relm_destroy_vm(struct relm_vm *vm); 
+
 int relm_vm_add_vcpu(struct relm_vm *vm, int vcpu_id); 
+struct vcpu *relm_vm_get_vcpu(struct relm_vm *vm, uint16_t vpid); 
+
+int relm_run_vcpu(struct relm_vm *vm, uint64_t vpid);
+int relm_stop_vcpu(struct relm_vm *vm, uint16_t vpid);
+int relm_run_vm(struct relm_vm *vm);
+int relm_stop_vm(struct relm_vm *vm);
+
 int relm_vm_allocate_guest_ram(struct relm_vm *vm, uint64_t size, uint64_t gpa_start); 
 int relm_vm_map_mmio_region(struct relm_vm *vm, uint64_t gpa, uint64_t hpa, uint64_t size); 
 void relm_vm_free_guest_memory(struct relm_vm *vm); 
+void relm_vm_free_guest_mem(struct relm_vm *vm);
+
 int relm_vm_copy_to_guest(struct relm_vm *vm, uint64_t gpa, const void *data, size_t size);
 int relm_vm_copy_from_guest(struct relm_vm *vm, uint64_t gpa, void *data, size_t size);
 int relm_vm_zero_guest_memory(struct relm_vm *vm, uint64_t gpa, size_t size); 
 int relm_vm_create_guest_page_tables(struct relm_vm *vm);
-int relm_run_vm(struct relm_vm *vm);
-int relm_stop_vm(struct relm_vm *vm);
 
 #endif 

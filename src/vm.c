@@ -260,7 +260,6 @@ struct relm_vm * relm_create_vm(int vm_id, const char *vm_name,
         return NULL; 
     }
 
-    pr_info("EPT context CREATED!!\n"); 
     pr_info("RELM: Created EPT context for VM %d (EPTP=0x%llx)\n",
             vm_id, vm->ept->eptp);
 
@@ -282,7 +281,7 @@ struct relm_vm * relm_create_vm(int vm_id, const char *vm_name,
             goto _out_free_ept; 
             return NULL; 
         }
-        PDEBUG("RELM: Guest page tables created and mapped to EPT: Guest PML4_GPA=0x%llu\n",
+        PDEBUG("RELM: Guest PML4_GPA=0x%llu\n",
                vm->pml4_gpa); 
     }
 
@@ -298,7 +297,6 @@ struct relm_vm * relm_create_vm(int vm_id, const char *vm_name,
     pr_info("RELM: VM '%s' (ID: %d) created with %llu MB RAM\n",
             vm->vm_name, vm->vm_id, (ram_size >> 20));
 
-    pr_info("RELM: VM is created!!"); 
     return vm;
 
 _out_free_memory:
@@ -751,8 +749,11 @@ int relm_vm_add_vcpu(struct relm_vm *vm, int vpid)
     /*store vcpu in the VM 's array */
     vm->vcpus[index] = vcpu;
 
-    /*set stack pointer to top of VM RAM */
+    /*set stack pointer to top of VM RAM 
+     * subtract 16 to leave space for return address*/
     vcpu->regs.rsp = (vm->total_guest_ram - 16) & ~0xFULL;   
+    vcpu->target_cpu_id = HOST_CPU_ID; 
+
     vcpu->state = VCPU_STATE_INITIALIZED;
     vm->online_vcpus++;
 
@@ -796,64 +797,107 @@ static int relm_vcpu_loop(void *data)
             vcpu->vpid, smp_processor_id());
 
 
-    relm_set_current_vcpu(vcpu); 
+    relm_set_current_vcpu(vcpu);
+    PDEBUG("RELM: VCPU%d: current_vcpu set on CPU%d (pre-pin)\n",
+           vcpu->vpid, smp_processor_id());
 
-    PDEBUG("-------------------------------------------------"); 
+    pr_info("RELM: VCPU%d: pinning to CPU%d\n",
+            vcpu->vpid, vcpu->target_cpu_id);
+    
+    ret = relm_vcpu_pin_to_cpu(vcpu, vcpu->target_cpu_id);
+    if(ret != 0)
+    {
+        pr_err("RELM: VCPU%d: failed to pin to CPU%d: %d\n",
+               vcpu->vpid, vcpu->target_cpu_id, ret);
+        vcpu->state = VCPU_STATE_ERROR;
+        return ret;
+    }
+
+    pr_info("RELM: VCPU%d: now running on CPU%d\n",
+            vcpu->vpid, smp_processor_id());
+
+    relm_set_current_vcpu(vcpu);
+    PDEBUG("RELM: VCPU%d: current_vcpu re-set on CPU%d (post-pin)\n",
+           vcpu->vpid, smp_processor_id()); 
+
+    pr_info("RELM: VCPU%d: starting Phase 2 VMCS setup on CPU%d\n",
+            vcpu->vpid, smp_processor_id());
+
+    ret = relm_vcpu_vmcs_setup(vcpu);
+    if(ret != 0)
+    {
+        pr_err("RELM: VCPU%d: Phase 2 VMCS setup failed: %d\n",
+               vcpu->vpid, ret);
+        vcpu->state = VCPU_STATE_ERROR;
+        goto _out_clear_vcpu;
+    }
+
+    PDEBUG("RELM: VCPU%d: initialising VMCS host+guest state on CPU%d\n",
+            vcpu->vpid, smp_processor_id());
 
     ret = relm_init_vmcs_state(vcpu);
     if(ret < 0)
     {
         pr_err("RELM: Failed to initialize VMCS state\n");
-//        goto _out_vmclear; 
-        return -1; 
+        goto _out_vmclear; 
     }
 
     vcpu->state = VCPU_STATE_RUNNING;
-    pr_info("RELM: VCPU %d entering execution loop\n", vcpu->vpid);
-/*
+    PDEBUG("RELM: VCPU %d entering execution loop\n", vcpu->vpid);
+
     while(!kthread_should_stop())
     {
         ret = relm_vmentry_asm(&vcpu->regs, vcpu->launched);
 
-        pr_err("RELM: [VPID=%u] VM-%s FAILED!\n",
-               vcpu->vpid, vcpu->launched ? "RESUME" : "LAUNCH");
+        if(ret != 0)
+        {
+            pr_err("RELM: [VPID=%u] VM-%s FAILED!\n",
+                vcpu->vpid, vcpu->launched ? "RESUME" : "LAUNCH");
        
-        error = __vmread(VMCS_INSTRUCTION_ERROR_FIELD);
+            error = __vmread(VMCS_INSTRUCTION_ERROR_FIELD);
        
-        pr_err("RELM: [VPID=%u] VM instruction error: %llu\n",
-               vcpu->vpid, error);
+            pr_err("RELM: [VPID=%u] VM instruction error: %llu\n",
+                vcpu->vpid, error);
        
-        PDEBUG("RELM: [VPID=%u] Guest state at failure:\n", vcpu->vpid);
-        PDEBUG(" RIP: 0x%016llx\n", __vmread(GUEST_RIP));
-        PDEBUG(" RSP: 0x%016llx\n", __vmread(GUEST_RSP));
-        PDEBUG(" RFLAGS: 0x%016llx\n", __vmread(GUEST_RFLAGS));
-        PDEBUG(" CR0: 0x%016llx\n", __vmread(GUEST_CR0));
-        PDEBUG(" CR3: 0x%016llx\n", __vmread(GUEST_CR3));
-        PDEBUG(" CR4: 0x%016llx\n", __vmread(GUEST_CR4));
+            PDEBUG("RELM: [VPID=%u] Guest state at failure:\n", vcpu->vpid);
+            PDEBUG(" RIP: 0x%016llx\n", __vmread(GUEST_RIP));
+            PDEBUG(" RSP: 0x%016llx\n", __vmread(GUEST_RSP));
+            PDEBUG(" RFLAGS: 0x%016llx\n", __vmread(GUEST_RFLAGS));
+            PDEBUG(" CR0: 0x%016llx\n", __vmread(GUEST_CR0));
+            PDEBUG(" CR3: 0x%016llx\n", __vmread(GUEST_CR3));
+            PDEBUG(" CR4: 0x%016llx\n", __vmread(GUEST_CR4));
        
-        pr_err("RELM: [VPID=%u] Dumping VMCS for analysis:\n", vcpu->vpid);
-        relm_dump_vcpu(vcpu);
+            pr_err("RELM: [VPID=%u] Dumping VMCS for analysis:\n", vcpu->vpid);
+            relm_dump_vcpu(vcpu);
 
-        vcpu->state = VCPU_STATE_ERROR; 
-        break;
+            vcpu->state = VCPU_STATE_ERROR; 
+            break;
+        }
+        
+        if(!vcpu->launched)
+        {
+            vcpu->launched = 1; 
+            PDEBUG("RELM: VCPU%d: first VM-exit handled, switching to VMRESUME\n",
+                   vcpu->vpid);
+        }
     }
-*/ 
 
     pr_info("RELM: [VPID=%u] Execution loop exiting\n", vcpu->vpid);
-  //  PDEBUG("RELM: [VPID=%u] Total VM-exits handled: %llu\n",
-    //        vcpu->vpid, vcpu->stats.total_exits);
 
-/* 
+ 
 _out_vmclear:
-    __vmclear(vcpu->vmcs_pa); 
-_out_clear_vcpu: 
+    PDEBUG("RELM: VCPU%d: VMCLEAR on CPU%d during cleanup\n",
+           vcpu->vpid, smp_processor_id());
+    relm_vmclear(vcpu);
+
     if(vcpu->state != VCPU_STATE_ERROR)
         vcpu->state = VCPU_STATE_STOPPED;
 
+_out_clear_vcpu: 
     relm_set_current_vcpu(NULL);
-    PDEBUG("RELM: [VPID=%u] Thread exiting\n", vcpu->vpid);
+    PDEBUG("RELM: VCPU%d: thread exiting on CPU%d\n",
+           vcpu->vpid, smp_processor_id());
 
-    */
     return ret; 
 }
 
@@ -931,10 +975,9 @@ int relm_stop_vcpu(struct relm_vm *vm, uint16_t vpid)
         return 0;
     }
 
-    pr_info("RELM: Stopping VCPU VPID=%u...............................\n", vpid);
+    pr_info("RELM: Stopping VCPU VPID=%u\n", vpid);
    
-    ret = kthread_stop(vcpu->host_task);
-   
+    relm_vcpu_unpin_and_stop(vcpu);
     vcpu->host_task = NULL;
     vcpu->state = VCPU_STATE_STOPPED;
 

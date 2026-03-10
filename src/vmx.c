@@ -306,40 +306,59 @@ void relm_vmx_disable_on_all_cpus(void)
 }
 
 /*pin vcpu thread to a specific physical host cpu for cpu affinity
- * disabled for now as we are wnablign VMX on all cpu cores 
-  
+*/  
 int relm_vcpu_pin_to_cpu(struct vcpu *vcpu, int target_cpu_id)
 {
-    int ret; 
-
-    if(!vcpu->host_task)
-    {
-        pr_err("RELM: VCPU %d has no host task assigned.\n", vcpu->vpid); 
-        return -EINVAL; 
-    }
-
+    int ret;
     cpumask_t new_mask; 
 
-    if(!cpu_possible(target_cpu_id))
+    if(!vcpu || !vcpu->host_task)
     {
-        pr_err("RELM: Invalid host CPU ID %d for pinning VCPU %d.\n", 
-               target_cpu_id, vcpu->vpid); 
+        pr_err("RELM: VCPU%d: cannot pin - no host task assigned.\n", 
+               vcpu? vcpu->vpid : -1); 
         return -EINVAL; 
     }
+
+     if(!cpu_possible(target_cpu_id))
+    {
+        pr_err("RELM: VCPU%d: target CPU%d is not possible\n",
+               vcpu->vpid, target_cpu_id);
+        return -EINVAL;
+    }
+
+     if(!cpu_online(target_cpu_id))
+    {
+        pr_err("RELM: VCPU%d: target CPU%d is not online\n",
+               vcpu->vpid, target_cpu_id);
+        return -EINVAL;
+    }
+
+    PDEBUG("RELM: VCPU%d: pinning to CPU%d (currently on CPU%d)\n",
+           vcpu->vpid, target_cpu_id, smp_processor_id());
 
     cpumask_clear(&new_mask); 
     cpumask_set_cpu(target_cpu_id, &new_mask); 
 
-    ret = set_cpus_allowed_ptr(vcpu->host_task, &new_mask); 
-    if(ret == 0)
+    /* restrict task to target_cpu_id only. if we are not currently on that
+     * CPU the scheduler will migrate us on the next preemption point. */
+    ret = set_cpus_allowed_ptr(vcpu->host_task, &new_mask);
+    if(ret != 0)
     {
-        PDEBUG("RELM: Successfuly pinned VCPU %d to Host CPU %d.\n", 
-               vcpu->vpid, target_cpu_id); 
+        pr_err("RELM: VCPU%d: set_cpus_allowed_ptr to CPU%d failed: %d\n",
+               vcpu->vpid, target_cpu_id, ret);
+        return ret;
     }
-    else{
-        pr_err("RELM: Failed to pin VCPU %d to CPU %d, error : %d\n", 
-               vcpu->vpid, target_cpu_id, ret); 
+
+    schedule(); 
+
+    while(smp_processor_id() != target_cpu_id)
+    {
+        pr_warn("RELM: VCPU%d: not yet on CPU%d (on CPU%d), retrying\n",
+                vcpu->vpid, target_cpu_id, smp_processor_id());
+        schedule();
     }
+
+    pr_info("RELM: VCPU%d: pinned to CPU%d\n", vcpu->vpid, smp_processor_id());
 
     return ret; 
 }
@@ -347,11 +366,14 @@ int relm_vcpu_pin_to_cpu(struct vcpu *vcpu, int target_cpu_id)
 
 void relm_vcpu_unpin_and_stop(struct vcpu *vcpu)
 {
-    set_cpus_allowed_ptr(vcpu->host_task, cpu_online_mask); 
-    kthread_stop(vcpu->host_task); 
-}
+    if(!vcpu || !vcpu->host_task)
+        return;
 
-*/ 
+    PDEBUG("RELM: VCPU%d: unpinning and stopping\n", vcpu->vpid);
+
+    set_cpus_allowed_ptr(vcpu->host_task, cpu_online_mask);
+    kthread_stop(vcpu->host_task);
+}
 
 /*IO bitmap bit in the execution controls need to be set in order to use io bimaps*/ 
 static inline bool relm_vcpu_io_bitmap_enabled(struct vcpu *vcpu)
@@ -1390,7 +1412,7 @@ int relm_vcpu_vmcs_setup(struct vcpu *vcpu)
     return 0; 
 }
 
-voidrelm_free_io_bitmap(struct vcpu *vcpu)
+void relm_free_io_bitmap(struct vcpu *vcpu)
 {
     if(!vcpu)
         return;
