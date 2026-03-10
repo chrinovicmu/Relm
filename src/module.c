@@ -49,7 +49,6 @@ static int __init relm_module_init(void)
 
     pr_info("VM created!!!\n");
     
-    /*
     ret = relm_vm_add_vcpu(my_vm, vpid);
     if (ret != 0) 
     {
@@ -64,12 +63,11 @@ static int __init relm_module_init(void)
     /*load guest code into VM memory
      * copy to guest physicall address 0x1000
      * we use 0x100(4kb) to leave the first page for the real-mode IVT/BIOS data
-     
+     */ 
 
     PDEBUG("RELM: Loading guest code (%zu bytes) to GPA 0x1000...\n", 
            sizeof(guest_code));  
  
-    /*
     ret = relm_vm_copy_to_guest(my_vm, 0x1000, guest_code, sizeof(guest_code)); 
     if(ret < 0)
     {
@@ -88,7 +86,7 @@ static int __init relm_module_init(void)
  
     pr_info("RELM: VM is now running!\n");
     pr_info("RELM: Module initialization complete\n");
-*/   
+   
     return 0;
 
 _cleanup_vm:
@@ -103,7 +101,6 @@ static void __exit relm_module_exit(void)
     
     pr_info("RELM: Shutting down hypervisor...\n");
 
-    /*
     if(my_vm)
     {
         pr_info("RELM: Stopping VM...\n");
@@ -119,8 +116,7 @@ static void __exit relm_module_exit(void)
     else{
         pr_info("RELM: No VM to clean\n"); 
     }
-     
-*/ 
+      
     pr_info("RELM: Module unloaded succesffully\n"); 
 }
 
