@@ -39,7 +39,7 @@ static int __init relm_module_init(void)
         return ret;
     }
     pr_info("RELM: VMX enabled on all CPUs\n");
-/*
+
     my_vm = relm_create_vm(vm_id, "Test-VM-01", (uint64_t)RELM_VM_GUEST_RAM_SIZE); 
     if(!my_vm)
     {
@@ -49,6 +49,7 @@ static int __init relm_module_init(void)
 
     pr_info("VM created!!!\n");
     
+    /*
     ret = relm_vm_add_vcpu(my_vm, vpid);
     if (ret != 0) 
     {
@@ -87,7 +88,7 @@ static int __init relm_module_init(void)
  
     pr_info("RELM: VM is now running!\n");
     pr_info("RELM: Module initialization complete\n");
-*/       
+*/   
     return 0;
 
 _cleanup_vm:
