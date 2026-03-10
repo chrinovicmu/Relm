@@ -1025,7 +1025,6 @@ int relm_run_vm(struct relm_vm *vm)
     vm->state = VM_STATE_RUNNING;
     spin_unlock(&vm->lock);
 
-/*
     for(i = 0; i < vm->max_vcpus; i++)
     {
         vcpu = vm->vcpus[i]; 
@@ -1051,18 +1050,20 @@ int relm_run_vm(struct relm_vm *vm)
             pr_err("RELM: Failed to start VCPU VPID=%u: %d\n", 
                    vcpu->vpid, ret); 
 
-//            goto _stop_all_vcpus; 
+            goto _stop_all_vcpus; 
         }
 
         started_vcpus++; 
     }
-    */ 
+
 
     if (started_vcpus == 0) 
     {
         pr_err("RELM: Failed to start any VCPUs for VM '%s'\n",
                vm->vm_name);
+        spin_lock(&vm->lock); 
         vm->state = VM_STATE_STOPPED;
+        spin_unlock(&vm->lock); 
         return -EIO;
     }
 
@@ -1070,7 +1071,7 @@ int relm_run_vm(struct relm_vm *vm)
             vm->vm_name, started_vcpus, vm->online_vcpus);
 
     return 0;
-/*
+
 _stop_all_vcpus:
 
     pr_err("RELM: Stopping all VCPUs due to launch failure\n");
@@ -1091,7 +1092,6 @@ _stop_all_vcpus:
     spin_unlock(&vm->lock);
 
     return ret;
-    */ 
 }
 
 int relm_stop_vm(struct relm_vm *vm)
@@ -1119,13 +1119,9 @@ int relm_stop_vm(struct relm_vm *vm)
     for (i = 0; i < vm->max_vcpus; i++) {
         vcpu = vm->vcpus[i];
 
-        if (!vcpu) {
-            continue;
-        }
-
-        if (!vcpu->host_task) {
-            continue;
-        }
+        vcpu = vm->vcpus[i];
+        if(!vcpu || !vcpu->host_task)
+                continue;
 
         pr_info("RELM: Stopping VCPU VPID=%u\n", vcpu->vpid);
 
