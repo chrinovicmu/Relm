@@ -1083,54 +1083,62 @@ static void relm_init_exec_controls(struct vcpu *vcpu)
         VMCS_EXIT_ACK_INTR_ON_EXIT; 
 }
 
+static inline uint32_t vmx_adjust(uint32_t req, uint32_t allowed0, uint32_t allowed1)
+{
+    req |= allowed0;
+    req &= allowed1;
+    return req;
+}
+
 static int relm_apply_exec_controls(struct vcpu *vcpu)
 {
-    struct vmx_exec_ctrls *controls = &vcpu->controls; 
-    uint64_t msr; 
-    uint32_t allowed0; 
-    uint32_t allowed1; 
-    uint32_t final; 
+    struct vmx_exec_ctrls *controls = &vcpu->controls;
+    uint64_t msr;
+    uint32_t allowed0;
+    uint32_t allowed1;
+    uint32_t final;
 
-    /*pin-based */ 
-    msr = __rdmsr1(MSR_IA32_VMX_PINBASED_CTLS); 
-    allowed0 = (uint32_t)(msr & 0xFFFFFFFF); 
+    /* pin-based */
+    msr = __rdmsr1(MSR_IA32_VMX_PINBASED_CTLS);
+    allowed0 = (uint32_t)msr;
     allowed1 = (uint32_t)(msr >> 32);
 
-    final = (controls->pin_based | allowed1) & (allowed0 | allowed1); 
-    CHECK_VMWRITE(VMCS_PIN_BASED_EXEC_CONTROLS, final); 
+    final = vmx_adjust(controls->pin_based, allowed0, allowed1);
+    CHECK_VMWRITE(VMCS_PIN_BASED_EXEC_CONTROLS, final);
 
-    /*primary processor-based*/
-    msr = __rdmsr1(MSR_IA32_VMX_PROCBASED_CTLS); 
-    allowed0 = (uint32_t)(msr & 0xFFFFFFFF); 
-    allowed1 = (uint32_t)(msr >> 32); 
+    /* primary processor */
+    msr = __rdmsr1(MSR_IA32_VMX_PROCBASED_CTLS);
+    allowed0 = (uint32_t)msr;
+    allowed1 = (uint32_t)(msr >> 32);
 
-    final = (controls->primary_proc | allowed1) & (allowed0 | allowed1); 
+    final = vmx_adjust(controls->primary_proc, allowed0, allowed1);
     CHECK_VMWRITE(VMCS_PRIMARY_PROC_BASED_EXEC_CONTROLS, final);
 
-    /*secondary processor-based */ 
-    msr = __rdmsr1(MSR_IA32_VMX_PROCBASED_CTLS2); 
-    allowed0 = (uint32_t)(msr & 0xFFFFFFFF); 
-    allowed1 = (uint32_t)(msr >> 32); 
+    /* secondary processor */
+    msr = __rdmsr1(MSR_IA32_VMX_PROCBASED_CTLS2);
+    allowed0 = (uint32_t)msr;
+    allowed1 = (uint32_t)(msr >> 32);
 
-    final = (controls->secondary_proc | allowed1) & (allowed0 | allowed1); 
+    final = vmx_adjust(controls->secondary_proc, allowed0, allowed1);
     CHECK_VMWRITE(VMCS_SECONDARY_PROC_BASED_EXEC_CONTROLS, final);
 
-    /*vm-entry contols */ 
-    msr = __rdmsr1(MSR_IA32_VMX_ENTRY_CTLS); 
-    allowed0 = (uint32_t)(msr & 0xFFFFFFFF); 
-    allowed1 = (uint32_t)(msr >> 32); 
+    /* entry */
+    msr = __rdmsr1(MSR_IA32_VMX_ENTRY_CTLS);
+    allowed0 = (uint32_t)msr;
+    allowed1 = (uint32_t)(msr >> 32);
 
-    final = (controls->vm_entry | allowed1) & (allowed0 | allowed1); 
-    CHECK_VMWRITE(VMCS_ENTRY_CONTROLS, final); 
+    final = vmx_adjust(controls->vm_entry, allowed0, allowed1);
+    CHECK_VMWRITE(VMCS_ENTRY_CONTROLS, final);
 
-    msr = __rdmsr1(MSR_IA32_VMX_EXIT_CTLS); 
-    allowed0 = (uint32_t)(msr & 0xFFFFFFFF); 
-    allowed1 = (uint32_t)(msr >> 32); 
+    /* exit */
+    msr = __rdmsr1(MSR_IA32_VMX_EXIT_CTLS);
+    allowed0 = (uint32_t)msr;
+    allowed1 = (uint32_t)(msr >> 32);
 
-    final = (controls->vm_exit | allowed1) & (allowed0 | allowed1); 
-    CHECK_VMWRITE(VMCS_EXIT_CONTROLS, final); 
+    final = vmx_adjust(controls->vm_exit, allowed0, allowed1);
+    CHECK_VMWRITE(VMCS_EXIT_CONTROLS, final);
 
-    return 0 ; 
+    return 0;
 }
 
 int relm_setup_exec_controls(struct vcpu *vcpu)
