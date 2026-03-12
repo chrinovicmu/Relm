@@ -94,4 +94,5 @@ int relm_vm_copy_from_guest(struct relm_vm *vm, uint64_t gpa, void *data, size_t
 int relm_vm_zero_guest_memory(struct relm_vm *vm, uint64_t gpa, size_t size); 
 int relm_vm_create_guest_page_tables(struct relm_vm *vm);
 
+struct vcpu *relm_get_current_vcpu(void);
 #endif 

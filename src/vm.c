@@ -765,6 +765,9 @@ int relm_vm_add_vcpu(struct relm_vm *vm, int vpid)
 
 struct vcpu *relm_vm_get_vcpu(struct relm_vm *vm, uint16_t vpid)
 {
+    if(!vm || vpid == 0)
+        return NULL;
+
     struct vcpu *vcpu = NULL;
     int index;
 
@@ -903,6 +906,9 @@ _out_clear_vcpu:
 
 int relm_run_vcpu(struct relm_vm *vm, uint64_t vpid)
 {
+    if(!vm && vpid == 0)
+        return -EINVAL; 
+
     struct vcpu *vcpu;
     long err;
 

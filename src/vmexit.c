@@ -1,3 +1,5 @@
+#include <linux/printk.h>
+#include <linux/smp.h>
 #include <linux/types.h>
 #include <include/vmx.h>
 #include <include/vm.h>
@@ -9,6 +11,46 @@
 
 #define CREATE_TRACE_POINTS 
 #include <include/trace/events/relm.h> 
+
+void relm_vmentry_save_rsp(uint64_t rsp)
+{
+    struct vcpu *vcpu = relm_get_current_vcpu(); 
+
+    if(unlikely(!vcpu))
+    {
+        pr_err("RELM: relm_vmentry_save_rsp: no current VCPU on CPU%d", 
+               smp_processor_id());
+        return; 
+    }
+
+    vcpu->vmentry_host_rsp = rsp; 
+    PDEBUG("RELM: VCPU%d: kthread RSP 0x%llx saved before VM-entry on CPU%d\n",
+           vcpu->vpid, rsp, smp_processor_id());
+}
+
+uint64_t relm_vmentry_get_rsp(void)
+{
+    struct vcpu *vcpu = relm_get_current_vcpu(); 
+
+    if(unlikely(!vcpu))
+    {
+        pr_err("RELM: relm_vmentry_get_rsp: no current VCPU on CPU%d\n", 
+               smp_processor_id());
+        return 0; 
+    }
+
+    if(unlikely(vcpu->vmentry_host_rsp == 0))
+    {
+        pr_err("RELM: VCPU%d: vmentry_host_rsp is 0",
+               vcpu->vpid); 
+        return 0; 
+    }
+
+    PDEBUG("RELM: VCPU%d: returning kthread RSP 0x%llx to vmexit_handler on CPU%d\n",
+           vcpu->vpid, vcpu->vmentry_host_rsp, smp_processor_id());
+ 
+    return vcpu->vmentry_host_rsp;
+}
 
 int handle_vmexit(struct stack_guest_gprs *guest_gprs)
 {

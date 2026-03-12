@@ -93,6 +93,7 @@ struct vcpu {
     void *host_stack; 
     uint64_t host_rsp; 
 
+    uint64_t vmentry_host_rsp; 
     struct vmcs_region *vmcs;
     uint64_t vmcs_pa;
 
