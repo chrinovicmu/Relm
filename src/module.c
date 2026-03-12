@@ -13,17 +13,20 @@
 
 static struct relm_vm *my_vm = NULL; 
 
-static uint8_t guest_code[] = {
-    0xb8, 0x01, 0x00, 0x00, 0x00,   // mov eax, 1 
-    0xcd, 0x80,                     // int 0x80 
-    0xf4,                          // hlt
-}; 
+#define GUEST_CODE_GPA 0x1000ULL 
+#define GUEST_STACK_TOP(vm) (((vm)->total_guest_ram - 16ULL) & ~0xFULL)
 
+static uint8_t guest_code[] = {
+    0x0F, 0xA2,     /* CPUID — unconditional VM-exit, no IDT required       */
+    0xF4,           /* HLT   — clean stop via handle_vmexit return 0        */
+};
+ 
 static int __init relm_module_init(void)
 {
     int ret;
     int vm_id = 1; 
-    int vpid = 1; 
+    int vpid = 1;
+    struct vcpu *vcpu; 
 
     if(!relm_vmx_support())
     {
@@ -68,7 +71,7 @@ static int __init relm_module_init(void)
     PDEBUG("RELM: Loading guest code (%zu bytes) to GPA 0x1000...\n", 
            sizeof(guest_code));  
  
-    ret = relm_vm_copy_to_guest(my_vm, 0x1000, guest_code, sizeof(guest_code)); 
+    ret = relm_vm_copy_to_guest(my_vm, GUEST_CODE_GPA, guest_code, sizeof(guest_code)); 
     if(ret < 0)
     {
         pr_err("RELM: Failed to load guest code: %d\n", ret); 
@@ -76,6 +79,21 @@ static int __init relm_module_init(void)
     }
 
     PDEBUG("RELM: Guest code loaded successfully (%d bytes copied)\n", ret); 
+    
+    vcpu = relm_vm_get_vcpu(my_vm, vpid); 
+    if(!vcpu)
+    {
+        pr_err("RELM: Cannot retrieve VCPU VPID=%d after creation\n", vpid); 
+        ret = -ENOENT; 
+        goto _cleanup_vm; 
+    }
+
+    vcpu->regs.rip = GUEST_CODE_GPA;
+    vcpu->regs.rsp = GUEST_STACK_TOP(my_vm); 
+
+    pr_info("RELM: Guest initial state: RIP=0x%lx RSP=0x%lx\n",
+            vcpu->regs.rip, vcpu->regs.rsp);
+ 
  
     ret = relm_run_vm(my_vm);
     if (ret != 0)

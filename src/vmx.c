@@ -631,7 +631,7 @@ static int relm_setup_cr_controls(struct vcpu *vcpu)
     fixed0 = __rdmsr1(MSR_IA32_VMX_CR4_FIXED0); 
     fixed1 = __rdmsr1(MSR_IA32_VMX_CR4_FIXED1); 
 
-    vcpu->cr4 = X86_CR4_VMXE | X86_CR4_PAE; 
+    vcpu->cr4 = X86_CR4_PAE; 
     vcpu->cr4 = (vcpu->cr4 | fixed0) & fixed1; 
 
     /*configure host mask 
@@ -639,7 +639,7 @@ static int relm_setup_cr_controls(struct vcpu *vcpu)
      * */
 
     cr0_mask = X86_CR0_PG | X86_CR0_PE | X86_CR0_NE | X86_CR0_CD | X86_CR0_NW;
-    cr4_mask = X86_CR4_VMXE | X86_CR4_PAE | X86_CR4_PSE;
+    cr4_mask = X86_CR4_PAE | X86_CR4_PSE;
 
     CHECK_VMWRITE(GUEST_CR0, vcpu->cr0); 
     CHECK_VMWRITE(GUEST_CR4, vcpu->cr4); 
@@ -1217,6 +1217,8 @@ struct vcpu *relm_vcpu_alloc_init(struct relm_vm *vm, int vpid)
     }
     PDEBUG("RELM: VMCS region setup complete\n");
 
+    relm_init_exec_controls(vcpu); 
+
     PDEBUG("RELM: Setting up IO bitmap\n");
 
     if(relm_vcpu_io_bitmap_enabled(vcpu))
@@ -1653,6 +1655,15 @@ int relm_init_vmcs_state(struct vcpu *vcpu)
 
     int ret;
 
+    PDEBUG("RELM: VCPU%d: setting up CR controls (CR0/CR4 constraints)\n",
+           vcpu->vpid);
+ 
+    if((ret = relm_setup_cr_controls(vcpu)) != 0)
+    {
+        pr_err("RELM: VCPU%d: CR controls setup failed: %d\n", vcpu->vpid, ret);
+        return -1;
+    }
+
     if((ret = relm_setup_host_state(vcpu)) != 0)
     {
         pr_err("Host state setup faile : err %d\n", ret); 
@@ -1663,7 +1674,12 @@ int relm_init_vmcs_state(struct vcpu *vcpu)
         pr_err("Guest state setup failed : err %d\n", ret); 
         return -1; 
     }
-
+   
+    pr_info("RELM: VCPU%d: VMCS host+guest state written on CPU%d"
+            " (CR0=0x%lx CR4=0x%lx RIP=0x%lx RSP=0x%lx)\n",
+            vcpu->vpid, smp_processor_id(),
+            vcpu->cr0, vcpu->cr4, vcpu->regs.rip, vcpu->regs.rsp);
+ 
     return 0; 
 }
 
