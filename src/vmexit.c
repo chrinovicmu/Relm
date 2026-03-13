@@ -96,7 +96,7 @@ int handle_vmexit(struct stack_guest_gprs *guest_gprs)
     exit_reason = __vmread(VM_EXIT_REASON);
 
     /*check if VM-entry failure */
-    if(exit_reason & (1ULL << 32))
+    if(exit_reason & (1U << 32))
     {
         pr_err("relm: [VPID=%u] VM-entry failure in exit handler\n",
                vcpu->vpid);
@@ -138,7 +138,7 @@ int handle_vmexit(struct stack_guest_gprs *guest_gprs)
     vcpu->regs.rip = guest_rip;
 
     PDEBUG("relm: [VPID=%u] Exit #%llu: reason=%llu RIP=0x%llx\n",
-           vcpu->vpid, vcpu->stats.total_exits, exit_reason & 0, guest_rip);
+           vcpu->vpid, vcpu->stats.total_exits, exit_reason, guest_rip);
 
     switch(exit_reason)
     {
@@ -191,29 +191,7 @@ int handle_vmexit(struct stack_guest_gprs *guest_gprs)
 
         case EXIT_REASON_CPUID:
         {
-            uint32_t leaf = vcpu->regs.rax & 0xFFFFFFFF;
-            uint32_t subleaf = vcpu->regs.rcx & 0xFFFFFFFF;
-            uint32_t eax, ebx, ecx, edx;
-
-            PDEBUG("relm: [VPID=%u] CPUID leaf=0x%x subleaf=0x%x\n",
-                   vcpu->vpid, leaf, subleaf);
-
-            __asm__ volatile(
-                "cpuid"
-                : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
-                : "a"(leaf), "c"(subleaf)
-            );
-
-            guest_gprs->rax = eax;
-            guest_gprs->rbx = ebx;
-            guest_gprs->rcx = ecx;
-            guest_gprs->rdx = edx;
-
-            vcpu->regs.rax = eax;
-            vcpu->regs.rbx = ebx;
-            vcpu->regs.rcx = ecx;
-            vcpu->regs.rdx = edx;
-
+            emulate_cpuid(vcpu);
             instr_len = __vmread(VM_EXIT_INSTRUCTION_LEN);
             _vmwrite(GUEST_RIP, guest_rip + instr_len);
 
