@@ -27,7 +27,28 @@ void relm_vmentry_save_rsp(uint64_t rsp)
     PDEBUG("RELM: VCPU%d: kthread RSP 0x%llx saved before VM-entry on CPU%d\n",
            vcpu->vpid, rsp, smp_processor_id());
 }
+static void emulate_cpuid(struct vcpu *vcpu)
+{
+    uint32_t leaf, subleaf;
+    uint32_t eax, ebx, ecx, edx;
 
+    /* guest inputs */
+    leaf    = (uint32_t)vcpu->regs.rax;
+    subleaf = (uint32_t)vcpu->regs.rcx;
+
+    asm volatile(
+        "cpuid"
+        : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+        : "a"(leaf), "c"(subleaf)
+        : "memory"
+    );
+
+    /* write results back to guest register state */
+    vcpu->regs.rax = eax;
+    vcpu->regs.rbx = ebx;
+    vcpu->regs.rcx = ecx;
+    vcpu->regs.rdx = edx;
+}
 uint64_t relm_vmentry_get_rsp(void)
 {
     struct vcpu *vcpu = relm_get_current_vcpu(); 
@@ -81,6 +102,8 @@ int handle_vmexit(struct stack_guest_gprs *guest_gprs)
                vcpu->vpid);
         return 0;
     }
+    
+    exit_reason = exit_reason & 0xFFFF;
 
     exit_qualification = __vmread(VM_EXIT_QUALIFICATION);
     guest_rip = __vmread(GUEST_RIP);
@@ -115,7 +138,7 @@ int handle_vmexit(struct stack_guest_gprs *guest_gprs)
     vcpu->regs.rip = guest_rip;
 
     PDEBUG("relm: [VPID=%u] Exit #%llu: reason=%llu RIP=0x%llx\n",
-           vcpu->vpid, vcpu->stats.total_exits, exit_reason, guest_rip);
+           vcpu->vpid, vcpu->stats.total_exits, exit_reason & 0, guest_rip);
 
     switch(exit_reason)
     {
@@ -304,7 +327,7 @@ int handle_vmexit(struct stack_guest_gprs *guest_gprs)
             vcpu->state = VCPU_STATE_STOPPED;
             return 0;
 
-        default:
+       default:
 
             pr_err("relm: [VPID=%u] Unhandled VM-exit reason %llu\n",
                    vcpu->vpid, exit_reason);
