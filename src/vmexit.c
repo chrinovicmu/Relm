@@ -83,6 +83,8 @@ int handle_vmexit(struct stack_guest_gprs *guest_gprs)
     uint64_t instr_len;
     u64 start_time, end_time, duration; 
 
+    int ret; 
+
     start_time = ktime_get_ns(); 
     
 
@@ -305,7 +307,16 @@ int handle_vmexit(struct stack_guest_gprs *guest_gprs)
             vcpu->state = VCPU_STATE_STOPPED;
             return 0;
 
-       default:
+        case EXIT_REASON_VMX_PREEMPTION_TIMER_EXPIRED:
+       
+            pr_warn("relm: [VPID=%u] Unexpected VMX preemption timer expired "
+                    "at RIP=0x%llx — timer was not configured\n",
+                    vcpu->vpid, guest_rip);
+            
+            vcpu->state = VCPU_STATE_STOPPED;
+            return 0; 
+       
+        default:
 
             pr_err("relm: [VPID=%u] Unhandled VM-exit reason %llu\n",
                    vcpu->vpid, exit_reason);

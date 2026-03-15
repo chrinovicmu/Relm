@@ -1044,9 +1044,7 @@ static void relm_init_exec_controls(struct vcpu *vcpu)
     controls->pin_based = 
         VMCS_PIN_EXTINT_EXITING | 
         VMCS_PIN_NMI_EXITING  | 
-        VMCS_PIN_VIRTUAL_NMIS |
-        VMCS_PIN_PREEMPT_TIMER | 
-        VMCS_PIN_POSTED_INTRS; 
+        VMCS_PIN_VIRTUAL_NMIS;
     
     controls->primary_proc = 
         VMCS_PROC_USE_MSR_BITMAPS | 

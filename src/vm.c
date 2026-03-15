@@ -883,6 +883,13 @@ static int relm_vcpu_loop(void *data)
             PDEBUG("RELM: VCPU%d: first VM-exit handled, switching to VMRESUME\n",
                    vcpu->vpid);
         }
+
+        if(vcpu->state != VCPU_STATE_RUNNING)
+        {
+            pr_info("RELM: VCPU%d: vcpu-state%d, exiting loop after %llu exits\n", 
+                    vcpu->vpid, vcpu->stats.total_exits); 
+            break;
+        }
     }
 
     pr_info("RELM: [VPID=%u] Execution loop exiting\n", vcpu->vpid);
