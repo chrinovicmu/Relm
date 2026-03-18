@@ -165,10 +165,10 @@ void relm_apic_inject_interrupt(struct virt_apic *apic, uint8_t vector,
 
 /*write vlaue to both the sofware struct and the virtual-apic page at the offset*/ 
 static inline void relm_vapic_sync_reg(struct virt_apic *apic,
-                                       uint32_t offset, uint32_t value); 
+                                       uint32_t offset, uint32_t value) 
 {
     if(apic->vapic_page && offset < APIC_REGISTER_SIZE)
-        *((volatile uint32_t *)(apic->vapic+page + offset)) = value; 
+        *((volatile uint32_t *)(apic->vapic_page + offset)) = value; 
 }
 
 static inline uint32_t relm_vapic_read_reg(struct virt_apic *apic,
@@ -178,6 +178,6 @@ static inline uint32_t relm_vapic_read_reg(struct virt_apic *apic,
         return *((volatile uint32_t *)(apic->vapic_page + offset)); 
     return 0; 
 }
-uint32_t relml_apic_get_timer_ccr(struct virt_apic *apic); 
+uint32_t relm_apic_get_timer_ccr(struct virt_apic *apic); 
 
 #endif 

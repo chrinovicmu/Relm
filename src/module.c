@@ -9,6 +9,8 @@
 #include <include/vmx_ops.h>
 #include <include/vmexit.h>
 #include <include/vmcs_state.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <utils/utils.h>
 
 static struct relm_vm *my_vm = NULL; 
@@ -16,17 +18,21 @@ static struct relm_vm *my_vm = NULL;
 #define GUEST_CODE_GPA 0x1000ULL 
 #define GUEST_STACK_TOP(vm) (((vm)->total_guest_ram - 16ULL) & ~0xFULL)
 
-static uint8_t guest_code[] = {
-    0x0F, 0xA2,     /* CPUID — unconditional VM-exit, no IDT required       */
-    0xF4,           /* HLT   — clean stop via handle_vmexit return 0        */
-};
- 
+extern const uint8_t guest_kernel_bin[]; 
+extern cosnt uint8_t guest_kernel_bin_end[]; 
+
 static int __init relm_module_init(void)
 {
     int ret;
     int vm_id = 1; 
     int vpid = 1;
     struct vcpu *vcpu; 
+
+    const size_t guest_kernel_size = 
+        (size_t)(guest_kernel_bin_end - guest_kernen_bin); 
+
+    pr_info("RELM: guest kernel: %zu bytes at kernel VA %p\n",
+            guest_kernel_size, guest_kernel_bin);
 
     if(!relm_vmx_support())
     {
@@ -63,23 +69,21 @@ static int __init relm_module_init(void)
     
     pr_info("RELM: VCPU %d added successfully, starting VM...\n", vpid);
 
-    /*load guest code into VM memory
-     * copy to guest physicall address 0x1000
-     * we use 0x100(4kb) to leave the first page for the real-mode IVT/BIOS data
-     */ 
 
-    PDEBUG("RELM: Loading guest code (%zu bytes) to GPA 0x1000...\n", 
-           sizeof(guest_code));  
+    PDEBUG("RELM: Loading guest kernel image (%zu bytes) to GPA 0x1000...\n", 
+           guest_kernel_size;  
  
-    ret = relm_vm_copy_to_guest(my_vm, GUEST_CODE_GPA, guest_code, sizeof(guest_code)); 
+    ret = relm_vm_copy_to_guest(my_vm, GUEST_CODE_GPA,
+                                guest_kernel_bin, guest_kernel_size; 
     if(ret < 0)
     {
-        pr_err("RELM: Failed to load guest code: %d\n", ret); 
+        pr_err("RELM: Failed to load guest kernel intp guest RAM: %d\n", ret); 
         goto _cleanup_vm; 
     }
 
-    PDEBUG("RELM: Guest code loaded successfully (%d bytes copied)\n", ret); 
-    
+    pr_info("RELM: Guest kernel (%zu bytes) loaded at GPA 0x%llx\n",
+            guest_kernel_size, GUEST_CODE_GPA);
+
     vcpu = relm_vm_get_vcpu(my_vm, vpid); 
     if(!vcpu)
     {
