@@ -252,6 +252,41 @@ int relm_apic_ept_setup(struct vcpu *vcpu)
 
 }
 
+void relm_apic_set_error(struct virt_apic *apic, uint32_t error_bit)
+{
+    error_bit &= APIC_ESR_VALID_BITS; 
+    if(!error_bit)
+        return; 
+
+    apic->esr_pending != error_bit; 
+ 
+    PDEBUG("RELM: APIC: ESR error recorded: bit=%u esr_pending=0x%02x",
+           __builtin_ctz(error_bit),   /* ctz = count trailing zeros = bit position */
+           apic->esr_pending & APIC_ESR_VALID_BITS);
+
+
+    if(apic->is_enabled && !(apic->lvt_error & APIC_LVT_MASKED))
+    {
+        uint8_t error_vector = (uint8_t)(apic->lvt_error & APIC_LVT_VECTOR_MASK);
+
+        /*validate the error vectro before injecting 
+         * if guest programmed a vector < 16 into LVT_ERROR, injectign it would 
+         * itself be an illegal-vector error */ 
+        if(error_vector >= APIC_ILLEGAL_VECTOR_THRESHOLD)
+        {
+            PDEBUG("RELM: APIC: injecting LVT Error interrupt vector=0x%02x",
+                   error_vector);
+
+            relm_apic_inject_interrupt(apic, error_vector, false); 
+        }
+        else {
+           PDEBUG("RELM: APIC: LVT_ERROR has illegal vector=0x%02x "
+                   "— error interrupt not injected",error_vector);
+        }
+
+    }
+}
+
 /*PPR update */ 
 void relm_apic_ppr_update(struct virt_apic *apic)
 {
@@ -521,5 +556,533 @@ static void relm_apic_hanlde_icr_write(struct virt_apic *apic, uint32_t value)
     }
  
 }
+
+
+uint32_t relm_apic_get_timer_ccr(struct virt_apic *apic)
+{
+    uint64_t elapsed_ns;
+    uint64_t ticks; 
+    uint32_t divisor; 
+    uint32_t ccr; 
+
+    if(apic->timer_icr == 0 || apic->timer_start_ns == 0)
+        return 0; 
+
+    elapsed_ns = ktime_get_ns() - apic->timer_start_ns; 
+
+    switch(apic->timer_dcr & 0x0FU)
+    {
+        case APIC_TIMER_DCR_DIV2:  divisor = 2;   break;  /* 0x00 */
+        case APIC_TIMER_DCR_DIV4:  divisor = 4;   break;  /* 0x01 */
+        case 0x02:                 divisor = 8;   break;
+        case APIC_TIMER_DCR_DIV16: divisor = 16;  break;  /* 0x03 */
+        case 0x08:                 divisor = 32;  break;
+        case 0x09:                 divisor = 64;  break;
+        case 0x0A:                 divisor = 128; break;
+        case APIC_TIMER_DCR_DIV1:                          /* 0x0B */
+        default:                   divisor = 1;   break;
+    }
+
+    ticks = elapsed_ns / (10ULL * (uint64_t)divisor); 
+}
+
+void relm_apic_inject_interrupt(struct virt_apic *apic, uint8_t vector, 
+                                bool level_triggered)
+{
+    uint32_t word = APIC_VEC_WORD(vector); 
+    uint32_t mask = APIC_VEC_MASK(vector); 
+
+    spin_lock(&apic->lock); 
+
+    apic->irr[word] |= mask; 
+
+    if(level_triggered)
+        apic->tmr[word] |= mask; 
+    else 
+        apic->tmr[word] &= ~mask;
+
+    relm_vapic_sync_reg(apic, APIC_REG_IRR(word) apic->irr[word]); 
+    relm_vapic_sync_reg(apic, APIC_REG_TMR(word),apic->tmr[word]); 
+
+    spin_unlock(&apic->lock); 
+
+    PDEBUG("RELM: APIC: injected vector %u (%s) IRR[%u]=0x%08x\n",
+           vector, level_triggered ? "level" : "edge",
+           word, apic->irr[word]);
+}
+
+int relm_apic_read(struct vcpu *vcpu, uint32_t offset, uint32_t *value)
+{
+    struct virt_apic *apic = &vcpu->apic; 
+    uint32_t 
+}
+int relm_apic_read(struct vcpu *vcpu, uint32_t offset, uint32_t *value)
+{
+    struct virt_apic *apic = &vcpu->apic;
+    uint32_t word;  
+ 
+    if(offset & 0x3U)
+    {
+        pr_warn("RELM: APIC: unaligned read at offset 0x%03x (returning 0)\n",
+                offset);
+        *value = 0;
+        return 0;
+    }
+ 
+    switch(offset)
+    {
+        case APIC_REG_ID:
+            *value = apic->apic_id;
+            break;
+ 
+        case APIC_REG_VERSION:
+            *value = apic->version;
+            break;
+ 
+        case APIC_REG_TPR:
+            apic->tpr = relm_vapic_read_reg(apic, APIC_REG_TPR);
+            *value = apic->tpr;
+            break;
+ 
+        case APIC_REG_APR:
+        case APIC_REG_PPR:
+            relm_apic_ppr_update(apic);
+            *value = apic->ppr;
+            break;
+ 
+        case APIC_REG_EOI:
+            *value = 0;
+            break;
+ 
+        case APIC_REG_RRD:
+            *value = 0;
+            break;
+ 
+        case APIC_REG_LDR:
+            *value = apic->ldr;
+            break;
+ 
+        case APIC_REG_DFR:
+            *value = apic->dfr;
+            break;
+ 
+        case APIC_REG_SVR:
+            *value = apic->svr;
+            break;
+ 
+        case APIC_REG_ESR:
+            /* Error Status Register (offset 0x280).
+             * Bits 6:0 encode the last APIC error:
+             *   bit 0 = Send Checksum Error
+             *   bit 1 = Receive Checksum Error
+             *   bit 2 = Send Accept Error
+             *   bit 3 = Receive Accept Error
+             *   bit 4 = Redirectable IPI
+             *   bit 5 = Send Illegal Vector
+             *   bit 6 = Receive Illegal Vector
+             *   bit 7 = Illegal Register Address
+             * Software must write 0 to ESR first to latch the current error,
+             * then read it. Linux's lapic_dump_self_esr() reads this to
+             * diagnose APIC bus transmission problems.
+             * SDM Vol 3A §10.5.3 'Error Handling'. */
+            *value = apic->esr;
+            break;
+ 
+        case APIC_REG_LVT_CMCI:
+            *value = APIC_LVT_MASKED;
+            break;
+ 
+        case APIC_REG_ICR_LOW:
+            *value = apic->icr_low & ~APIC_ICR_SEND_PENDING;
+            break;
+ 
+        case APIC_REG_ICR_HIGH:
+            *value = apic->icr_high;
+            break;
+ 
+        case APIC_REG_LVT_TIMER:
+            *value = apic->lvt_timer;
+            break;
+ 
+        case APIC_REG_LVT_THERMAL:
+            *value = apic->lvt_thermal;
+            break;
+ 
+        case APIC_REG_LVT_PMC:
+            *value = apic->lvt_pmc;
+            break;
+ 
+        case APIC_REG_LVT_LINT0:
+            *value = apic->lvt_lint0;
+            break;
+ 
+        case APIC_REG_LVT_LINT1:
+            *value = apic->lvt_lint1;
+            break;
+ 
+        case APIC_REG_LVT_ERROR:
+            *value = apic->lvt_error;
+            break;
+ 
+        case APIC_REG_TIMER_ICR:
+            *value = apic->timer_icr;
+            break;
+ 
+        case APIC_REG_TIMER_DCR:
+            *value = apic->timer_dcr;
+            break;
+ 
+        case APIC_REG_TIMER_CCR:
+            /* CCR is the ONLY register that cannot be statically cached in
+             * the virtual-APIC page, because it changes every few microseconds.
+             * We derive the current value from elapsed time, then update the
+             * virtual-APIC page with this fresh value so a subsequent hardware
+             * read gets a reasonably current value. The approximation is fine
+             * for guest software which only uses CCR to poll for timer expiry
+             * or to calibrate the timer frequency. */
+            *value = relm_apic_get_timer_ccr(apic);
+            relm_vapic_sync_reg(apic, APIC_REG_TIMER_CCR, *value);
+            break;
+ 
+        default:
+            /* ISR, TMR, IRR: each is an 8-word 256-bit bitmap array.
+             * Compute which array element to return from the offset. */
+            if(offset >= APIC_REG_ISR(0) && offset <= APIC_REG_ISR(7))
+            {
+                word = (offset - APIC_REG_ISR(0)) / 0x10; /* 0x10 stride */
+                *value = apic->isr[word];
+            }
+            else if(offset >= APIC_REG_TMR(0) && offset <= APIC_REG_TMR(7))
+            {
+                word = (offset - APIC_REG_TMR(0)) / 0x10;
+                *value = apic->tmr[word];
+            }
+            else if(offset >= APIC_REG_IRR(0) && offset <= APIC_REG_IRR(7))
+            {
+                word = (offset - APIC_REG_IRR(0)) / 0x10;
+                *value = apic->irr[word];
+            }
+            else
+            {
+                PDEBUG("RELM: APIC: read from reserved offset 0x%03x\n",
+                       offset);
+                *value = 0;
+                return -EINVAL;
+            }
+            break;
+    }
+ 
+    PDEBUG("RELM: APIC: read offset=0x%03x → 0x%08x\n", offset, *value);
+    return 0;
+}
+
+/*all APIC writes cause APIC-access VM-exits(reason 44, access type 1) 
+ * */ 
+int relm_apic_write(struct vcpu *vcpu, uint32_t offset, uint32_t value)
+{
+    struct virt_apic * apic = &vcpu->apic; 
+
+    /*silenty ignore unaligned writes */ 
+    if(offset & 0x3U)
+    {
+        pr_warn("RELM: APIC: unaligned write at offset 0x%03x val=0x%08x "
+                "(ignored)\n", offset, value);
+        return 0;
+    }
+ 
+    PDEBUG("RELM: APIC: write offset=0x%03x value=0x%08x\n", offset, value);
+    
+    switch(offset)
+    {
+        case APIC_REG_ID:
+            
+            /*only 31:24 are significant; lower 24 bits are reserved and must be 0 */ 
+            apic->apic_id = value & 0xFF000000U; 
+            relm_vapic_sync_reg(apic, APIC_REG_ID, apic->apic_id); 
+            break ;
+
+        case APIC_REG_VERSION: 
+            /*version register is read-only. hardware ignores writes silenty*/ 
+            break ;
+
+        case APIC_REG_TPR:
+             
+             /* Only bits [7:0] are significant; bits [31:8] are reserved. */
+            apic->tpr = value & 0xFFU;
+            relm_vapic_sync_reg(apic, APIC_REG_TPR, apic->tpr);
+            
+            /* PPR depends on TPR — recompute and sync to page */
+            relm_apic_ppr_update(apic);
+            
+            PDEBUG("RELM: APIC: TPR = 0x%02x PPR = 0x%02x\n",
+                   apic->tpr, apic->ppr);
+            break;
+
+        case APIC_REG_EOI:
+            /* End of Interrupt — write-only, side-effecting.
+             * The written value is irrelevant (conventionally 0).
+             * This triggers the multi-step EOI processing: clear ISR, update
+             * TMR, potentially notify I/O APIC, recompute PPR. */
+            relm_apic_eoi(apic);
+            /* Write 0 to the EOI slot in the virtual-APIC page.
+             * While EOI is architecturally write-only (reads are undefined),
+             * zeroing it keeps the page clean */ 
+            relm_vapic_sync_reg(apic, APIC_REG_EOI, 0); 
+            break; 
+
+        case APIC_REG_LDR:
+
+            apic->ldr = value & 0xFF000000U;
+            relm_vapic_sync_reg(apic, APIC_REG_LDR, apic->ldr);
+            break;
+
+        case APIC_REG_DFR:
+            /* destination Format Register. Only bits [31:28] are writable;
+             * bits [27:0] are reserved and read as 1. The OR with 0x0FFFFFFF
+             * forces the reserved bits to 1 regardless of what the guest wrote,
+             * matching real hardware behaviour per SDM §10.6.2. */
+            apic->dfr = value | 0x0FFFFFFFU;
+            relm_vapic_sync_reg(apic, APIC_REG_DFR, apic->dfr);
+            break;
+
+        case APIC_REG_SVR:
+            
+            apic->svr = value; 
+            apic->is_enabled = (value & APIC_SVR_SW_ENABLE) != 0; 
+            relm_vapic_sync_reg(apic, APIC_REG_SVR, apic->svr); 
+            
+            if(apic->is_enabled)
+                pr_info("RELM: APIC: SOFTWARE ENABLED — "
+                        "SVR=0x%08x spurious_vector=0x%02x\n",
+                        value, value & 0xFFU);
+            else
+                pr_info("RELM: APIC: software disabled (SVR bit 8 cleared)\n");
+            break;  
+
+        /* ISR, TMR, IRR are READ-ONLY. Hardware ignores writes; we do too. */
+        case APIC_REG_ISR(0): case APIC_REG_ISR(1): case APIC_REG_ISR(2):
+        case APIC_REG_ISR(3): case APIC_REG_ISR(4): case APIC_REG_ISR(5):
+        case APIC_REG_ISR(6): case APIC_REG_ISR(7):
+        case APIC_REG_TMR(0): case APIC_REG_TMR(1): case APIC_REG_TMR(2):
+        case APIC_REG_TMR(3): case APIC_REG_TMR(4): case APIC_REG_TMR(5):
+        case APIC_REG_TMR(6): case APIC_REG_TMR(7):
+        case APIC_REG_IRR(0): case APIC_REG_IRR(1): case APIC_REG_IRR(2):
+        case APIC_REG_IRR(3): case APIC_REG_IRR(4): case APIC_REG_IRR(5):
+        case APIC_REG_IRR(6): case APIC_REG_IRR(7):
+        
+            PDEBUG("RELM: APIC: write to read-only bitmap offset 0x%03x "
+                   "(silently ignored)\n", offset);
+            break;
+
+        case APIC_REG_ESR:
+            /* Error Status Register has unusual write semantics:
+             * Software must write 0 to ESR to LATCH the current error state
+             * into the readable bits, then read ESR to see the error.
+             * We simply clear ESR — no real error tracking implemented yet. */
+            apic->esr = apic->esr_pending & APIC_ESR_VALID_BITS; 
+            apic->esr_pending = 0; 
+            relm_vapic_sync_reg(apic, APIC_REG_ESR, epic->esr);
+
+            if(apic->esr != 0)
+                PDEBUG("RELM: APIC: ESR latched 0x%02x (pending cleared)\n",
+                       apic->esr);
+            break;
+
+        case APIC_REG_LVT_CMCI:
+            break;
+        
+        case APIC_REG_ICR_HIGH:
+           
+            apic->icr_high = value;
+            relm_vapic_sync_reg(apic, APIC_REG_ICR_HIGH, value);
+            break;
+ 
+        case APIC_REG_ICR_LOW:
+           
+            relm_apic_handle_icr_write(apic, value);
+            break;
+
+        case APIC_REG_LVT_TIMER:
+            
+            apic->lvt_timer  = value;
+            apic->timer_mode = (enum virt_apic_timer_mode)((value >> 17) & 0x3U);
+            relm_vapic_sync_reg(apic, APIC_REG_LVT_TIMER, value);
+            
+            PDEBUG("RELM: APIC: LVT timer: mode=%u vector=0x%02x %s\n",
+                   apic->timer_mode,
+                   value & APIC_LVT_VECTOR_MASK,
+                   (value & APIC_LVT_MASKED) ? "MASKED" : "unmasked");
+            break;
+ 
+        case APIC_REG_LVT_THERMAL:
+           
+            apic->lvt_thermal = value;
+            relm_vapic_sync_reg(apic, APIC_REG_LVT_THERMAL, value);
+            break;
+ 
+        case APIC_REG_LVT_PMC:
+            
+            apic->lvt_pmc = value;
+            relm_vapic_sync_reg(apic, APIC_REG_LVT_PMC, value);
+            break;
+ 
+        case APIC_REG_LVT_LINT0:
+            
+            apic->lvt_lint0 = value;
+            relm_vapic_sync_reg(apic, APIC_REG_LVT_LINT0, value);
+            break;
+
+        case APIC_REG_LVT_LINT1:
+          
+            apic->lvt_lint1 = value;
+            relm_vapic_sync_reg(apic, APIC_REG_LVT_LINT1, value);
+            break;
+ 
+        case APIC_REG_LVT_ERROR:
+           
+            apic->lvt_error = value;
+            relm_vapic_sync_reg(apic, APIC_REG_LVT_ERROR, value);
+            break;
+ 
+        case APIC_REG_TIMER_ICR:
+            
+            apic->timer_icr = value;
+            relm_vapic_sync_reg(apic, APIC_REG_TIMER_ICR, value);
+            if(value != 0)
+            {
+                /* Capture the start time with nanosecond precision */
+                apic->timer_start_ns = ktime_get_ns();
+                pr_info("RELM: APIC: timer STARTED — ICR=0x%08x mode=%u "
+                        "vector=0x%02x %s\n",
+                        value,
+                        apic->timer_mode,
+                        apic->lvt_timer & APIC_LVT_VECTOR_MASK,
+                        (apic->lvt_timer & APIC_LVT_MASKED) ?
+                            "MASKED" : "will fire interrupt");
+            }
+            else
+            {
+                /* Writing 0 to ICR stops the timer immediately.
+                 * Clear the start timestamp so CCR reads return 0. */
+                apic->timer_start_ns = 0;
+                PDEBUG("RELM: APIC: timer STOPPED (ICR = 0)\n");
+            }
+            break;
+ 
+        case APIC_REG_TIMER_CCR:
+            /* Current Count Register is READ-ONLY.
+             * "Writing to this register is ignored." We comply. */
+            PDEBUG("RELM: APIC: write to read-only CCR (ignored)\n");
+            break;
+ 
+        case APIC_REG_TIMER_DCR:
+
+            apic->timer_dcr = value & 0x0BU;
+            relm_vapic_sync_reg(apic, APIC_REG_TIMER_DCR, apic->timer_dcr);
+            PDEBUG("RELM: APIC: timer DCR = 0x%02x\n", apic->timer_dcr);
+            break;
+ 
+        default:
+
+            pr_warn("RELM: APIC: write to reserved/unknown offset 0x%03x "
+                    "val=0x%08x (ignored)\n", offset, value);
+
+            return -EINVAL;
+    } 
+
+    return 0;
+}
+
+
+/*this is the entry point called by hadle_vmexit() in cmexit.c 
+* when exit reason == EXIT_REASON_APIC_ACCESS (44)
+* for write (type 1), qe still need to know what value was written. 
+* the hardware doesn;t tell us this directly, it only tells us  the 
+* address and direction. the value is in one of the
+* guest's general-purpose registers. 
+* 
+* we assume the value is in RAX */ 
+
+
+int relm_apic_handle_access(struct vcpu)
+{
+    struct virt_apic *apic = &vcpu->apic; 
+
+    uint64_t qual; 
+    uint32_t offset; 
+    uint32_t access_type; 
+    uint32_t value; 
+    uint64_t instr_len; 
+    uint64_t guest_rip; 
+    int ret; 
+
+    qual = __vmread(VM_EXIT_QUALIFICATION); 
+    offset = (uint32_t)(qual & APIC_ACCESS_OFFSET_MASK); 
+    access_type = (uint32_t)((qual & APIC_ACCESS_TYPE_MASK) 
+        >> APIC_ACCESS_TYPE_SHIFT); 
+
+    guest_rip = __vmread(GUEST_RIP); 
+    instr_len = __vmread(VM_EXIT_INSTRUCTION_LEN); 
+
+    PDEBUG("RELM: APIC ACCESS: offset=0x%03x type=%u RIP=0x%llx len=%llu\n",
+           offset, access_type, guest_rip, instr_len);
+    
+    switch(access_type)
+    {
+        case APIC_ACCESS_TYPE_LINEAR_WRITE:
+
+        case APIC_ACCESS_TYPE_EVENT_DELIVERY:
+            
+            value = (uint32_t)(vcpu->regs.rax & 0xFFFFFFFFULL);
+            ret   = relm_apic_write(vcpu, offset, value);
+            if(ret < 0)
+                pr_warn("RELM: APIC: write to invalid offset 0x%03x "
+                        "val=0x%08x at RIP=0x%llx\n",
+                        offset, value, guest_rip);
+            break; 
+
+        case APIC_ACCESS_TYPE_LINEAR_READ:
+            
+            ret = relm_apic_read(vcpu, offset, &value);
+            if(ret < 0)
+            {
+                pr_warn("RELM: APIC: read from invalid offset 0x%03x "
+                        "at RIP=0x%llx\n", offset, guest_rip);
+                value = 0;  /* return 0 for unknown registers rather than crashing */
+            }
+
+            /*inject read into guest rax*/ 
+            vcpu->regs.rax = (unsigned long)(value & 0xFFFFFFFFUL);
+            break;
+
+        case APIC_ACCESS_TYPE_LINEAR_FETCH:
+
+            /*invalid */ 
+            pr_err("RELM: APIC: INSTRUCTION FETCH at APIC offset=0x%03x "
+                   "RIP=0x%llx — guest instruction pointer in APIC space! "
+                   "This indicates a fatal guest error.\n",
+                   offset, guest_rip);
+            vcpu->state = VCPU_STATE_STOPPED;
+            return 0;  /* return 0 tells relm_vcpu_loop to break */
+
+        default:
+         
+            PDEBUG("RELM: APIC: event-delivery access type=%u offset=0x%03x\n",
+                   access_type, offset);
+            ret = relm_apic_read(vcpu, offset, &value);
+            if(ret == 0)
+                vcpu->regs.rax = (unsigned long)(value & 0xFFFFFFFFUL);
+            break;
+    }
+
+    __vmwrite(GUEST_RIP, guest_rip + instr_len);
+ 
+    PDEBUG("RELM: APIC: handled — RIP advanced 0x%llx → 0x%llx (instr_len=%llu)\n",
+           guest_rip, guest_rip + instr_len, instr_len);
+
+
+    return 1; 
+}
+
 
 

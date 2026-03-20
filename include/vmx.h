@@ -8,6 +8,7 @@
 #include <include/vmx_ops.h>
 #include <include/vmcs.h>
 #include <include/ept.h> 
+#include <include/apic.h>
 
 #define VPID_TO_INDEX(vpid) ((vpid) -1)
 #define INDEX_TO_VPID(index) ((index) + 1)
@@ -84,6 +85,8 @@ struct vcpu {
     int launched; 
     enum vcpu_state state; 
     bool halted;
+
+    struct virt_apic *apic; 
 
     spinlock_t lock; 
     wait_queue_head_t wq; 

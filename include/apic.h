@@ -88,15 +88,27 @@ struct relm_vm;
 #define APIC_ICR_DEST_SHIFT             24
 
 /* 256-bit bitmap helpers: each bitmap is uint32_t[8], bit N = vector N */
-#define APIC_VEC_WORD(v)        ((v) >> 5)
-#define APIC_VEC_BIT(v)         ((v) & 0x1F)
-#define APIC_VEC_MASK(v)        (1U << APIC_VEC_BIT(v))
+#define APIC_VEC_WORD(v)                ((v) >> 5)
+#define APIC_VEC_BIT(v)                 ((v) & 0x1F)
+#define APIC_VEC_MASK(v)                (1U << APIC_VEC_BIT(v))
 
 /* DCR values */
-#define APIC_TIMER_DCR_DIV1     0x0BU
-#define APIC_TIMER_DCR_DIV2     0x00U
-#define APIC_TIMER_DCR_DIV4     0x01U
-#define APIC_TIMER_DCR_DIV16    0x03U
+#define APIC_TIMER_DCR_DIV1             0x0BU
+#define APIC_TIMER_DCR_DIV2             0x00U
+#define APIC_TIMER_DCR_DIV4             0x01U
+#define APIC_TIMER_DCR_DIV16            0x03U
+
+#define APIC_ESR_SEND_CHECKSUM_ERROR    (1U << 0)
+#define APIC_ESR_RECV_CHECKSUM_ERROR    (1U << 1)
+#define APIC_ESR_SEND_ACCEPT_ERROR      (1U << 2)
+#define APIC_ESR_RECV_ACCEPT_ERROR      (1U << 3)
+#define APIC_ESR_REDIRECTABLE_IPI       (1U << 4)
+#define APIC_ESR_SEND_ILLEGAL_VECTOR    (1U << 5)
+#define APIC_ESR_RECV_ILLEGAL_VECTOR    (1U << 6)
+#define APIC_ESR_ILLEGAL_REG_ADDRESS    (1U << 7)
+
+#define APIC_ESR_VALID_BITS             0x000000FFU
+#define APIC_ILLEGAL_VECTOR_THRESHOLD   16U
 
 enum virt_apic_timer_mode {
     APIC_TIMER_MODE_ONESHOT      = 0,
@@ -119,7 +131,9 @@ struct virt_apic{
     uint32_t svr; 
     uint32_t ldr; 
     uint32_t dfr; 
-    uint32_t esr; 
+    uint32_t esr;
+    /*live error accumulator */ 
+    uint32_t esr_pending; 
     uint32_t irr[8]; 
     uint32_t isr[8]; 
     uint32_t tmr[8]; 
@@ -178,6 +192,9 @@ static inline uint32_t relm_vapic_read_reg(struct virt_apic *apic,
         return *((volatile uint32_t *)(apic->vapic_page + offset)); 
     return 0; 
 }
+
+void relm_apic_set_error(struct virt_apic *apic, uint32_t error_bit); 
+
 uint32_t relm_apic_get_timer_ccr(struct virt_apic *apic); 
 
 #endif 

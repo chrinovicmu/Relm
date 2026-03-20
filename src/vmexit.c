@@ -172,6 +172,10 @@ int handle_vmexit(struct stack_guest_gprs *guest_gprs)
             vcpu->state = VCPU_STATE_STOPPED;
             return 0;
 
+        case EXIT_REASON_APIC_ACCESS:
+            ret = relm_apic_handle_access(vcpu);
+            return ret; 
+
         case EXIT_REASON_INIT_SIGNAL:
 
             pr_info("relm: [VPID=%u] INIT signal received\n", vcpu->vpid);
