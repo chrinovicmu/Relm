@@ -11,7 +11,6 @@
 #include <include/vmexit.h>
 #include <include/apic.h>
 #include <include/ept.h>
-#include <stdint.h>
 #include <utils/utils.h>
 
 /*EPT permissons flags for the APIC-access page at GPA 0xFEE00000. 
@@ -62,19 +61,19 @@ void relm_apic_free(struct virt_apic *apic)
     }
 }
 
-void relm_init_apic(struct virt_apic *apic, uint8_t apic_id)
+void relm_apic_init(struct virt_apic *apic, uint8_t apic_id)
 {
     int i; 
 
     spin_lock_init(&apic->lock); 
 
-    apic->apic_id = apic_id; 
+    apic->apic_id = (uint32_t)apic_id << 24; 
     apic->version = APIC_VERSION_VALUE; 
 
     apic->svr = APIC_SVR_RESET_VALUE;
 
     /*DFR= flat logical address mode */ 
-    apic->dfr = 0xFFFFFFFU; 
+    apic->dfr = 0xFFFFFFFFU; 
 
     /*all LVT entries start masked */ 
     apic->lvt_timer   = APIC_LVT_RESET_VALUE;
@@ -129,10 +128,10 @@ void relm_init_apic(struct virt_apic *apic, uint8_t apic_id)
             apic_id, apic->vapic_page_pa, apic->apic_access_page_pa);
 }
 
-int relm_apic_vmcs(struct vcpu *vcpu)
+int relm_apic_vmcs_setup(struct vcpu *vcpu)
 {
     struct virt_apic *apic = &vcpu->apic; 
-    struct msr; 
+    uint64_t msr; 
     uint32_t allowed1; 
     bool apic_reg_virt_ok; 
 
@@ -258,7 +257,7 @@ void relm_apic_set_error(struct virt_apic *apic, uint32_t error_bit)
     if(!error_bit)
         return; 
 
-    apic->esr_pending != error_bit; 
+    apic->esr_pending |= error_bit; 
  
     PDEBUG("RELM: APIC: ESR error recorded: bit=%u esr_pending=0x%02x",
            __builtin_ctz(error_bit),   /* ctz = count trailing zeros = bit position */
@@ -296,18 +295,18 @@ void relm_apic_ppr_update(struct virt_apic *apic)
 
     for(word = 7; word >= 0; word--)
     {
-        if(apic->isr(word) != 0)
+        if(apic->isr[word] != 0)
         {
             bit = 31 - __builtin_clz(apic->isr[word]); 
             isrv = (uint32_t)((word * 32) + bit); 
             break; 
         }
     }
-    tpr_class = apic->tpr & 0xFOU; 
+    tpr_class = apic->tpr & 0xF0U; 
 
     if(isrv > 0)
     {
-        uint32_t isr_class = isrv & 0xFU0; 
+        uint32_t isr_class = isrv & 0xF0U; 
         apic->ppr = (isr_class > tpr_class) ? isr_class : tpr_class; 
     }
     else{
@@ -329,12 +328,12 @@ static void relm_apic_eoi(struct virt_apic *apic)
     bool found = false; 
     
     /*find highest proiority isr entry */ 
-    for(word = 7; worddd >= 0 && !found; word--)
+    for(word = 7; word >= 0 && !found; word--)
     {
         if(apic->isr[word] != 0)
         {
             bit = 31 - __builtin_clz(apic->isr[word]); 
-            vector = (*uint8_t)((word * 32) + bit); 
+            vector = (uint8_t)((word * 32) + bit); 
             apic->isr[word] &= ~(1U << bit); 
             relm_vapic_sync_reg(apic, APIC_REG_ISR(word), apic->isr[word]); 
             found = true; 
@@ -370,7 +369,7 @@ static int relm_apic_ipi_resolve_targets(struct relm_vm *vm,
                                          int max_targets)
 {
     uint32_t shorthand = icr_low & APIC_ICR_SHORTHAND_MASK; 
-    bool logical = (icr_low * (1U << 11)) |= 0; /*des mode*/ 
+    bool logical = (icr_low & (1U << 11)) != 0; /*des mode*/ 
     uint8_t dest_field = (uint8_t)(icr_high >> APIC_ICR_DEST_SHIFT); 
     int found = 0; 
     int i; 
@@ -397,6 +396,7 @@ static int relm_apic_ipi_resolve_targets(struct relm_vm *vm,
             case APIC_ICR_SHORTHAND_ALL_INCL:
                 /*broadcast to all vcpus including sender.*/ 
                 targets[found++] = candidate; 
+                break;
 
             case APIC_ICR_SHORTHAND_ALL_EXCL:
                 /*broadcast to all vcpus expect sender */ 
@@ -416,7 +416,7 @@ static int relm_apic_ipi_resolve_targets(struct relm_vm *vm,
                 else {
                     uint8_t cand_ldr = (uint8_t)(candidate->apic.ldr >> 24); 
                     if((cand_ldr & dest_field) != 0)
-                        targets[found++] == candidate; 
+                        targets[found++] = candidate; 
                 }
                 break; 
         }
@@ -442,7 +442,7 @@ static void relm_apic_ipi_deliver(struct vcpu *sender,
                    vector, level ? "level" : "edge", target->vpid);
 
             relm_apic_inject_interrupt(&target->apic, (uint8_t)vector, level); 
-            break
+            break;
 
         /*TODO :
          * when RELM_MAX_VCPUS > 1 
@@ -510,7 +510,7 @@ static void relm_apic_ipi_deliver(struct vcpu *sender,
     }
 }
 
-static void relm_apic_hanlde_icr_write(struct virt_apic *apic, uint32_t value)
+static void relm_apic_handle_icr_write(struct virt_apic *apic, uint32_t value)
 {
     struct vcpu *sender = container_of(apic, struct vcpu, apic); 
     struct relm_vm *vm = sender->vm; 
@@ -525,7 +525,7 @@ static void relm_apic_hanlde_icr_write(struct virt_apic *apic, uint32_t value)
     int i; 
 
     apic->icr_low = value; 
-    relm_vapic_sync_reg(apic, APIC_REG_ICR_LOW, value & ~APIC_ICR_PENDING); 
+    relm_vapic_sync_reg(apic, APIC_REG_ICR_LOW, value & ~APIC_ICR_SEND_PENDING); 
 
     PDEBUG("RELM: APIC: ICR write VCPU%u → "
            "delivery=0x%03x vec=0x%02x shorthand=0x%x dest=0x%02x %s",
@@ -541,7 +541,7 @@ static void relm_apic_hanlde_icr_write(struct virt_apic *apic, uint32_t value)
 
     if(ntargets == 0)
     {
-        DEBUG("RELM: APIC: ICR write from VCPU%u found no target VCPUs "
+        PDEBUG("RELM: APIC: ICR write from VCPU%u found no target VCPUs "
                "(delivery_mode=0x%03x shorthand=0x%x dest=0x%02x) "
                "— IPI correctly not delivered",
                sender->vpid,
@@ -584,6 +584,15 @@ uint32_t relm_apic_get_timer_ccr(struct virt_apic *apic)
     }
 
     ticks = elapsed_ns / (10ULL * (uint64_t)divisor); 
+
+    if(apic->timer_mode == APIC_TIMER_MODE_PERIODIC)
+        ccr = (uint32_t)(apic->timer_icr -
+              (uint32_t)(ticks % (uint64_t)apic->timer_icr));
+    else
+        ccr = (ticks >= (uint64_t)apic->timer_icr) ? 0 :
+              (uint32_t)(apic->timer_icr - ticks);
+
+    return ccr;
 }
 
 void relm_apic_inject_interrupt(struct virt_apic *apic, uint8_t vector, 
@@ -601,7 +610,7 @@ void relm_apic_inject_interrupt(struct virt_apic *apic, uint8_t vector,
     else 
         apic->tmr[word] &= ~mask;
 
-    relm_vapic_sync_reg(apic, APIC_REG_IRR(word) apic->irr[word]); 
+    relm_vapic_sync_reg(apic, APIC_REG_IRR(word), apic->irr[word]); 
     relm_vapic_sync_reg(apic, APIC_REG_TMR(word),apic->tmr[word]); 
 
     spin_unlock(&apic->lock); 
@@ -611,11 +620,6 @@ void relm_apic_inject_interrupt(struct virt_apic *apic, uint8_t vector,
            word, apic->irr[word]);
 }
 
-int relm_apic_read(struct vcpu *vcpu, uint32_t offset, uint32_t *value)
-{
-    struct virt_apic *apic = &vcpu->apic; 
-    uint32_t 
-}
 int relm_apic_read(struct vcpu *vcpu, uint32_t offset, uint32_t *value)
 {
     struct virt_apic *apic = &vcpu->apic;
@@ -881,7 +885,7 @@ int relm_apic_write(struct vcpu *vcpu, uint32_t offset, uint32_t value)
              * We simply clear ESR — no real error tracking implemented yet. */
             apic->esr = apic->esr_pending & APIC_ESR_VALID_BITS; 
             apic->esr_pending = 0; 
-            relm_vapic_sync_reg(apic, APIC_REG_ESR, epic->esr);
+            relm_vapic_sync_reg(apic, APIC_REG_ESR, apic->esr);
 
             if(apic->esr != 0)
                 PDEBUG("RELM: APIC: ESR latched 0x%02x (pending cleared)\n",
@@ -1004,7 +1008,7 @@ int relm_apic_write(struct vcpu *vcpu, uint32_t offset, uint32_t value)
 * we assume the value is in RAX */ 
 
 
-int relm_apic_handle_access(struct vcpu)
+int relm_apic_handle_access(struct vcpu *vcpu)
 {
     struct virt_apic *apic = &vcpu->apic; 
 
@@ -1075,7 +1079,7 @@ int relm_apic_handle_access(struct vcpu)
             break;
     }
 
-    __vmwrite(GUEST_RIP, guest_rip + instr_len);
+    _vmwrite(GUEST_RIP, guest_rip + instr_len);
  
     PDEBUG("RELM: APIC: handled — RIP advanced 0x%llx → 0x%llx (instr_len=%llu)\n",
            guest_rip, guest_rip + instr_len, instr_len);
@@ -1083,6 +1087,3 @@ int relm_apic_handle_access(struct vcpu)
 
     return 1; 
 }
-
-
-

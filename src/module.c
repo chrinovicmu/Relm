@@ -9,8 +9,6 @@
 #include <include/vmx_ops.h>
 #include <include/vmexit.h>
 #include <include/vmcs_state.h>
-#include <stddef.h>
-#include <stdint.h>
 #include <utils/utils.h>
 
 static struct relm_vm *my_vm = NULL; 
@@ -19,7 +17,7 @@ static struct relm_vm *my_vm = NULL;
 #define GUEST_STACK_TOP(vm) (((vm)->total_guest_ram - 16ULL) & ~0xFULL)
 
 extern const uint8_t guest_kernel_bin[]; 
-extern cosnt uint8_t guest_kernel_bin_end[]; 
+extern const uint8_t guest_kernel_bin_end[]; 
 
 static int __init relm_module_init(void)
 {
@@ -29,7 +27,7 @@ static int __init relm_module_init(void)
     struct vcpu *vcpu; 
 
     const size_t guest_kernel_size = 
-        (size_t)(guest_kernel_bin_end - guest_kernen_bin); 
+        (size_t)(guest_kernel_bin_end - guest_kernel_bin); 
 
     pr_info("RELM: guest kernel: %zu bytes at kernel VA %p\n",
             guest_kernel_size, guest_kernel_bin);
@@ -64,17 +62,16 @@ static int __init relm_module_init(void)
         pr_err("RELM: Failed to add VCPU with VPID %d (error: %d)\n", 
                vpid, ret);
         return -1; 
-      goto _cleanup_vm;
+        goto _cleanup_vm;
     }
     
     pr_info("RELM: VCPU %d added successfully, starting VM...\n", vpid);
 
 
     PDEBUG("RELM: Loading guest kernel image (%zu bytes) to GPA 0x1000...\n", 
-           guest_kernel_size;  
+           guest_kernel_size); 
  
-    ret = relm_vm_copy_to_guest(my_vm, GUEST_CODE_GPA,
-                                guest_kernel_bin, guest_kernel_size; 
+    ret = relm_vm_copy_to_guest(my_vm, GUEST_CODE_GPA, guest_kernel_bin, guest_kernel_size);
     if(ret < 0)
     {
         pr_err("RELM: Failed to load guest kernel intp guest RAM: %d\n", ret); 

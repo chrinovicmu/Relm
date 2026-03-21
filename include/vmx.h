@@ -86,7 +86,7 @@ struct vcpu {
     enum vcpu_state state; 
     bool halted;
 
-    struct virt_apic *apic; 
+    struct virt_apic apic; 
 
     spinlock_t lock; 
     wait_queue_head_t wq; 

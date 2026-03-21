@@ -4,7 +4,6 @@
 #include <linux/types.h>
 #include <linux/spinlock.h>
 #include <linux/ktime.h> 
-#include <stdint.h>
 
 struct vcpu; 
 struct relm_vm; 
@@ -68,7 +67,7 @@ struct relm_vm;
 
 #define APIC_VERSION_VALUE              0x00050014U /*intergated APIC, maxlvt=5*/ 
 #define APIC_SVR_RESET_VALUE            0X000000FFU /*APIC disabled*/ 
-#define APIC_SVR_SW_ENALE               (1U << 8)
+#define APIC_SVR_SW_ENABLE               (1U << 8)
 #define APIC_LVT_MASKED                 (1ULL << 16)
 #define APIC_LVT_RESET_VALUE            APIC_LVT_MASKED
 
@@ -137,8 +136,8 @@ struct virt_apic{
     uint32_t irr[8]; 
     uint32_t isr[8]; 
     uint32_t tmr[8]; 
-    uint32_t isr_low; 
-    uint32_t isr_high; 
+    uint32_t icr_low; 
+    uint32_t icr_high; 
     uint32_t lvt_timer; 
     uint32_t lvt_thermal; 
     uint32_t lvt_pmc; 
@@ -165,7 +164,7 @@ int relm_apic_vmcs_setup(struct vcpu *vcpu);
 int relm_apic_ept_setup(struct vcpu *vcpu);
 
 /*handle EXIT_REASON_APIC_ACCESS (exit 14)*/ 
-int relm_handle_apic_handle_access(struct vcpu *vcpu); 
+int relm_apic_handle_access(struct vcpu *vcpu); 
 
 /*emulate guest write/read*/  
 int relm_apic_read(struct vcpu *vcpu, uint32_t offset, uint32_t *value); 

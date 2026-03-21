@@ -7,7 +7,7 @@
 /*start if the raw binary blobk*/ 
 .globl guest_kernel_bin 
 guest_kernel_bin:
-    .incbin "guest_kernel_bin"
+    .incbin "kernel/guest_kernel_bin"
 
 .globl guest_kernel_bin_end
 guest_kernel_bin_end:
